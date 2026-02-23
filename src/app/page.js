@@ -39,6 +39,19 @@ function listMonthsBetween(fromKey, toKey) {
   return months;
 }
 
+// Dias úteis (Seg–Sex) do mês (não considera feriados)
+function businessDaysInMonth(year, monthIndex0) {
+  // monthIndex0: 0=Jan ... 11=Dez
+  const first = new Date(year, monthIndex0, 1);
+  const last = new Date(year, monthIndex0 + 1, 0); // último dia do mês
+  let count = 0;
+  for (let d = 1; d <= last.getDate(); d++) {
+    const day = new Date(year, monthIndex0, d).getDay(); // 0=Dom ... 6=Sáb
+    if (day >= 1 && day <= 5) count++; // Seg a Sex
+  }
+  return count;
+}
+
 // Month menu (Option B)
 function monthLabel(monthKey) {
   const [y, m] = monthKey.split("-").map(Number);
@@ -64,8 +77,7 @@ function buildMonthOptions(centerKey, pastMonths = 24, futureMonths = 12) {
   return options;
 }
 
-// Converts a BRL formatted string or digits to cents.
-// Strategy: keep only digits; last 2 digits are cents.
+// Converts digits-only string to cents. Last 2 digits are cents.
 function digitsToCents(digitsStr) {
   const digits = (digitsStr || "").replace(/\D/g, "");
   if (!digits) return 0;
@@ -76,8 +88,10 @@ function digitsToCents(digitsStr) {
 
 function centsToBrlInput(cents) {
   const value = (cents || 0) / 100;
-  // No "R$" here, because the UI shows prefix separately
-  return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return value.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 // Normalize older saved data (when amount was in "reais" number) to cents.
@@ -90,8 +104,6 @@ function normalizeExpensesByMonth(raw) {
     out[monthKey] = list
       .filter(Boolean)
       .map((e) => {
-        // Old shape: { amount: 12.34 }
-        // New shape: { amount_cents: 1234 }
         const amount_cents =
           typeof e.amount_cents === "number"
             ? e.amount_cents
@@ -113,36 +125,58 @@ function normalizeExpensesByMonth(raw) {
 }
 
 function normalizeIncomes(raw) {
-  // New: { salaries_cents, benefits_cents, food_cents, extra_cents }
-  // If nothing exists, seed with your numbers
+  /**
+   * v3:
+   * - salaries_cents
+   * - benefits_cents
+   * - food_daily_cents  (vale por dia útil)
+   * - extra_cents
+   *
+   * Seed com seus números:
+   * - Salários: 4765,38
+   * - Benefícios: 1092,97
+   * - Vale alimentação: 38,05 (isso faz sentido como diário)
+   * - Extra: 1200,00
+   */
   const seeded = {
-    salaries_cents: 476538,   // 4765,38
-    benefits_cents: 109297,   // 1092,97
-    food_cents: 3805,         // 38,05
-    extra_cents: 120000,      // 1200,00 (usando como "extra", você pode renomear pra esposa se quiser)
+    salaries_cents: 476538,
+    benefits_cents: 109297,
+    food_daily_cents: 3805,
+    extra_cents: 120000,
   };
 
   if (!raw || typeof raw !== "object") return seeded;
 
-  // Backward compat: previous fields
-  if (
-    typeof raw.salary_cents === "number" ||
-    typeof raw.multibenefits_cents === "number" ||
-    typeof raw.spouse_salary_cents === "number"
-  ) {
-    return {
-      salaries_cents: raw.salary_cents ?? seeded.salaries_cents,
-      benefits_cents: raw.multibenefits_cents ?? seeded.benefits_cents,
-      food_cents: raw.food_cents ?? seeded.food_cents,
-      extra_cents: raw.spouse_salary_cents ?? seeded.extra_cents,
-    };
-  }
+  // Backward compat: versões anteriores
+  // Se vier food_cents, assumimos que era "valor diário" (pela sua origem 38,05)
+  const food_daily_cents =
+    typeof raw.food_daily_cents === "number"
+      ? raw.food_daily_cents
+      : typeof raw.food_cents === "number"
+        ? raw.food_cents
+        : seeded.food_daily_cents;
+
+  // Ainda compat com chaves antigas do Supabase-mode (caso exista)
+  const salaries_cents =
+    raw.salaries_cents ??
+    raw.salary_cents ??
+    seeded.salaries_cents;
+
+  const benefits_cents =
+    raw.benefits_cents ??
+    raw.multibenefits_cents ??
+    seeded.benefits_cents;
+
+  const extra_cents =
+    raw.extra_cents ??
+    raw.spouse_salary_cents ??
+    seeded.extra_cents;
 
   return {
-    salaries_cents: typeof raw.salaries_cents === "number" ? raw.salaries_cents : seeded.salaries_cents,
-    benefits_cents: typeof raw.benefits_cents === "number" ? raw.benefits_cents : seeded.benefits_cents,
-    food_cents: typeof raw.food_cents === "number" ? raw.food_cents : seeded.food_cents,
-    extra_cents: typeof raw.extra_cents === "number" ? raw.extra_cents : seeded.extra_cents,
+    salaries_cents: typeof salaries_cents === "number" ? salaries_cents : seeded.salaries_cents,
+    benefits_cents: typeof benefits_cents === "number" ? benefits_cents : seeded.benefits_cents,
+    food_daily_cents: typeof food_daily_cents === "number" ? food_daily_cents : seeded.food_daily_cents,
+    extra_cents: typeof extra_cents === "number" ? extra_cents : seeded.extra_cents,
   };
 }
 
@@ -152,8 +186,6 @@ const CATEGORY_OPTIONS = [
   { value: "mercado", label: "Mercado" },
   { value: "aleatorios", label: "Aleatórios" },
   { value: "emprestado", label: "Emprestado" },
-
-  // New
   { value: "gatos", label: "Gatos" },
   { value: "lanches", label: "Lanches" },
   { value: "dinheiro", label: "No dinheiro (papel)" },
@@ -173,7 +205,7 @@ export default function Home() {
   const [incomes, setIncomes] = useState({
     salaries_cents: 0,
     benefits_cents: 0,
-    food_cents: 0,
+    food_daily_cents: 0, // diário (dia útil)
     extra_cents: 0,
   });
 
@@ -183,7 +215,7 @@ export default function Home() {
   // Add expense form
   const [category, setCategory] = useState("fixos");
   const [description, setDescription] = useState("");
-  const [amountDigits, setAmountDigits] = useState(""); // digits-only, last 2 are cents
+  const [amountDigits, setAmountDigits] = useState("");
 
   // Range
   const [fromMonth, setFromMonth] = useState(toMonthKey());
@@ -195,9 +227,19 @@ export default function Home() {
   // Current month list
   const currentList = expensesByMonth[selectedMonth] || [];
 
+  // Business days for selected month
+  const businessDays = useMemo(() => {
+    const [y, m] = selectedMonth.split("-").map(Number);
+    return businessDaysInMonth(y, m - 1);
+  }, [selectedMonth]);
+
+  // Vale total (mês) = diário * dias úteis
+  const foodMonthlyCents = useMemo(() => {
+    return (incomes.food_daily_cents || 0) * businessDays;
+  }, [incomes.food_daily_cents, businessDays]);
+
   // ---------------- Load/Save LocalStorage ----------------
   useEffect(() => {
-    // expenses
     const savedExp = localStorage.getItem("expensesByMonth_v1");
     if (savedExp) {
       try {
@@ -208,8 +250,8 @@ export default function Home() {
       }
     }
 
-    // incomes
-    const savedInc = localStorage.getItem("incomes_v2");
+    // incomes v3
+    const savedInc = localStorage.getItem("incomes_v3");
     if (savedInc) {
       try {
         setIncomes(normalizeIncomes(JSON.parse(savedInc)));
@@ -217,11 +259,11 @@ export default function Home() {
         setIncomes(normalizeIncomes(null));
       }
     } else {
-      // Try older keys if exists in your old codebase
-      const legacyInc = localStorage.getItem("incomes_v1");
-      if (legacyInc) {
+      // fallback: v2
+      const savedV2 = localStorage.getItem("incomes_v2");
+      if (savedV2) {
         try {
-          setIncomes(normalizeIncomes(JSON.parse(legacyInc)));
+          setIncomes(normalizeIncomes(JSON.parse(savedV2)));
         } catch {
           setIncomes(normalizeIncomes(null));
         }
@@ -236,7 +278,7 @@ export default function Home() {
   }, [expensesByMonth]);
 
   useEffect(() => {
-    localStorage.setItem("incomes_v2", JSON.stringify(incomes));
+    localStorage.setItem("incomes_v3", JSON.stringify(incomes));
   }, [incomes]);
 
   // ---------------- Totals ----------------
@@ -244,17 +286,17 @@ export default function Home() {
     return (
       (incomes.salaries_cents || 0) +
       (incomes.benefits_cents || 0) +
-      (incomes.food_cents || 0) +
+      foodMonthlyCents +
       (incomes.extra_cents || 0)
     );
-  }, [incomes]);
+  }, [incomes, foodMonthlyCents]);
 
   const filteredList = useMemo(() => {
     if (categoryFilter === "all") return currentList;
     return currentList.filter((e) => e.category === categoryFilter);
   }, [currentList, categoryFilter]);
 
-  // Group “same names”: group by description + category (normalized)
+  // Group same names: by description + category
   const grouped = useMemo(() => {
     const map = new Map();
     for (const e of filteredList) {
@@ -277,15 +319,19 @@ export default function Home() {
       g.count += 1;
       if (e.createdAt > g.lastCreatedAt) g.lastCreatedAt = e.createdAt;
     }
-    // Show newest first
-    return Array.from(map.values()).sort((a, b) => (b.lastCreatedAt || "").localeCompare(a.lastCreatedAt || ""));
+    return Array.from(map.values()).sort((a, b) =>
+      (b.lastCreatedAt || "").localeCompare(a.lastCreatedAt || "")
+    );
   }, [filteredList]);
 
   const totalExpensesCents = useMemo(() => {
     return currentList.reduce((sum, e) => sum + (e.amount_cents || 0), 0);
   }, [currentList]);
 
-  const balanceCents = useMemo(() => incomeTotalCents - totalExpensesCents, [incomeTotalCents, totalExpensesCents]);
+  const balanceCents = useMemo(() => incomeTotalCents - totalExpensesCents, [
+    incomeTotalCents,
+    totalExpensesCents,
+  ]);
 
   const totalsByCategory = useMemo(() => {
     const init = Object.fromEntries(CATEGORY_OPTIONS.map((c) => [c.value, 0]));
@@ -385,7 +431,8 @@ export default function Home() {
           <div>
             <h1 className="text-2xl font-bold">Controle de Gastos</h1>
             <p className="text-sm text-gray-600">
-              Visualizando: <span className="font-semibold">{monthLabel(selectedMonth)}</span>
+              Visualizando:{" "}
+              <span className="font-semibold">{monthLabel(selectedMonth)}</span>
             </p>
           </div>
 
@@ -425,10 +472,13 @@ export default function Home() {
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <h2 className="text-lg font-semibold">Ganhos</h2>
-              <p className="text-sm text-gray-600">Edite os valores e o total será recalculado automaticamente.</p>
+              <p className="text-sm text-gray-600">
+                Edite os valores. O vale alimentação é calculado por dias úteis do mês selecionado.
+              </p>
             </div>
             <div className="text-sm text-gray-600">
-              Total: <span className="font-semibold">{formatBRLFromCents(incomeTotalCents)}</span>
+              Total:{" "}
+              <span className="font-semibold">{formatBRLFromCents(incomeTotalCents)}</span>
             </div>
           </div>
 
@@ -444,9 +494,10 @@ export default function Home() {
               onChangeCents={(c) => setIncomes((p) => ({ ...p, benefits_cents: c }))}
             />
             <MoneyField
-              label="Vale alimentação"
-              cents={incomes.food_cents}
-              onChangeCents={(c) => setIncomes((p) => ({ ...p, food_cents: c }))}
+              label="Vale alimentação (por dia útil)"
+              cents={incomes.food_daily_cents}
+              onChangeCents={(c) => setIncomes((p) => ({ ...p, food_daily_cents: c }))}
+              hint={`${businessDays} dia(s) úteis → total no mês: ${formatBRLFromCents(foodMonthlyCents)}`}
             />
             <MoneyField
               label="Extra"
@@ -480,11 +531,7 @@ export default function Home() {
               onChange={(e) => setDescription(e.target.value)}
             />
 
-            <MoneyInput
-              valueDigits={amountDigits}
-              onChangeDigits={setAmountDigits}
-              placeholder="0,00"
-            />
+            <MoneyInput valueDigits={amountDigits} onChangeDigits={setAmountDigits} placeholder="0,00" />
           </div>
 
           <div className="flex flex-wrap gap-2 items-center">
@@ -568,7 +615,6 @@ export default function Home() {
                     <span>•</span>
                     <span>{g.count}x</span>
 
-                    {/* Edit category AFTER inserted (applies to the whole group) */}
                     <span className="ml-2 text-gray-400">Alterar tipo:</span>
                     <select
                       className="border rounded-xl p-1.5 bg-white"
@@ -585,9 +631,7 @@ export default function Home() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <div className="font-semibold whitespace-nowrap">
-                    {formatBRLFromCents(g.total_cents)}
-                  </div>
+                  <div className="font-semibold whitespace-nowrap">{formatBRLFromCents(g.total_cents)}</div>
                   <button
                     onClick={() => removeGroup(selectedMonth, g.ids)}
                     className="rounded-xl border px-3 py-2 bg-white"
@@ -599,9 +643,7 @@ export default function Home() {
             ))}
 
             {grouped.length === 0 ? (
-              <p className="text-sm text-gray-600">
-                Nenhum gasto registrado neste mês (ou nesse filtro).
-              </p>
+              <p className="text-sm text-gray-600">Nenhum gasto registrado neste mês (ou nesse filtro).</p>
             ) : null}
           </div>
         </section>
@@ -643,7 +685,6 @@ function MoneyInput({ valueDigits, onChangeDigits, placeholder }) {
         placeholder={placeholder}
         value={display}
         onChange={(e) => {
-          // take whatever user typed, keep only digits
           const digits = e.target.value.replace(/\D/g, "");
           onChangeDigits(digits);
         }}
@@ -653,7 +694,7 @@ function MoneyInput({ valueDigits, onChangeDigits, placeholder }) {
 }
 
 // Smaller money fields for incomes
-function MoneyField({ label, cents, onChangeCents }) {
+function MoneyField({ label, cents, onChangeCents, hint }) {
   const [digits, setDigits] = useState(String(cents || 0));
 
   useEffect(() => {
@@ -673,6 +714,7 @@ function MoneyField({ label, cents, onChangeCents }) {
           placeholder="0,00"
         />
       </div>
+      {hint ? <div className="text-xs text-gray-500 mt-1">{hint}</div> : null}
     </label>
   );
 }
