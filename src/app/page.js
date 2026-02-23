@@ -2,28 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-// ---------- Helpers ----------
-function formatBRL(value) {
-  return (value || 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
+// ---------------- Helpers ----------------
+function formatBRLFromCents(cents) {
+  const value = (cents || 0) / 100;
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 function toMonthKey(date = new Date()) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`; // "YYYY-MM"
-}
-
-function parseMoneyToNumber(input) {
-  // aceita "120,50" / "120.50" / "R$ 120,50"
-  const clean = String(input)
-    .replace(/[^\d,.-]/g, "")
-    .replace(".", "")
-    .replace(",", ".");
-  const n = Number(clean);
-  return Number.isFinite(n) ? n : null;
+  return `${y}-${m}`; // YYYY-MM
 }
 
 function monthKeyToDate(monthKey) {
@@ -44,7 +32,6 @@ function listMonthsBetween(fromKey, toKey) {
 
   const months = [];
   const cursor = new Date(from.getTime());
-
   while (cursor <= to) {
     months.push(dateToMonthKey(cursor));
     cursor.setMonth(cursor.getMonth() + 1);
@@ -52,7 +39,7 @@ function listMonthsBetween(fromKey, toKey) {
   return months;
 }
 
-// --------- NEW: Month menu (Option B) ----------
+// Month menu (Option B)
 function monthLabel(monthKey) {
   const [y, m] = monthKey.split("-").map(Number);
   const date = new Date(y, m - 1, 1);
@@ -77,48 +64,169 @@ function buildMonthOptions(centerKey, pastMonths = 24, futureMonths = 12) {
   return options;
 }
 
-// ---------- Page ----------
-export default function Home() {
-  // Receitas fixas (pode evoluir depois para editar por mês também)
-  const incomes = {
-    salary: 4765.38,
-    multibenefits: 1092.97,
-    food: 38.05,
-    spouse: 1200.0,
+// Converts a BRL formatted string or digits to cents.
+// Strategy: keep only digits; last 2 digits are cents.
+function digitsToCents(digitsStr) {
+  const digits = (digitsStr || "").replace(/\D/g, "");
+  if (!digits) return 0;
+  const asInt = Number(digits);
+  if (!Number.isFinite(asInt)) return 0;
+  return asInt;
+}
+
+function centsToBrlInput(cents) {
+  const value = (cents || 0) / 100;
+  // No "R$" here, because the UI shows prefix separately
+  return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Normalize older saved data (when amount was in "reais" number) to cents.
+function normalizeExpensesByMonth(raw) {
+  if (!raw || typeof raw !== "object") return {};
+  const out = {};
+  for (const [monthKey, list] of Object.entries(raw)) {
+    if (!Array.isArray(list)) continue;
+
+    out[monthKey] = list
+      .filter(Boolean)
+      .map((e) => {
+        // Old shape: { amount: 12.34 }
+        // New shape: { amount_cents: 1234 }
+        const amount_cents =
+          typeof e.amount_cents === "number"
+            ? e.amount_cents
+            : typeof e.amount === "number"
+              ? Math.round(e.amount * 100)
+              : 0;
+
+        return {
+          id: e.id || (crypto?.randomUUID ? crypto.randomUUID() : String(Date.now())),
+          category: e.category || "fixos",
+          description: e.description || "",
+          amount_cents,
+          createdAt: e.createdAt || new Date().toISOString(),
+          meta: e.meta || { type: "single" },
+        };
+      });
+  }
+  return out;
+}
+
+function normalizeIncomes(raw) {
+  // New: { salaries_cents, benefits_cents, food_cents, extra_cents }
+  // If nothing exists, seed with your numbers
+  const seeded = {
+    salaries_cents: 476538,   // 4765,38
+    benefits_cents: 109297,   // 1092,97
+    food_cents: 3805,         // 38,05
+    extra_cents: 120000,      // 1200,00 (usando como "extra", você pode renomear pra esposa se quiser)
   };
 
-  const incomeTotal =
-    incomes.salary + incomes.multibenefits + incomes.food + incomes.spouse;
+  if (!raw || typeof raw !== "object") return seeded;
 
-  // Estrutura: { "YYYY-MM": [ {id, category, description, amount, createdAt, meta} ] }
+  // Backward compat: previous fields
+  if (
+    typeof raw.salary_cents === "number" ||
+    typeof raw.multibenefits_cents === "number" ||
+    typeof raw.spouse_salary_cents === "number"
+  ) {
+    return {
+      salaries_cents: raw.salary_cents ?? seeded.salaries_cents,
+      benefits_cents: raw.multibenefits_cents ?? seeded.benefits_cents,
+      food_cents: raw.food_cents ?? seeded.food_cents,
+      extra_cents: raw.spouse_salary_cents ?? seeded.extra_cents,
+    };
+  }
+
+  return {
+    salaries_cents: typeof raw.salaries_cents === "number" ? raw.salaries_cents : seeded.salaries_cents,
+    benefits_cents: typeof raw.benefits_cents === "number" ? raw.benefits_cents : seeded.benefits_cents,
+    food_cents: typeof raw.food_cents === "number" ? raw.food_cents : seeded.food_cents,
+    extra_cents: typeof raw.extra_cents === "number" ? raw.extra_cents : seeded.extra_cents,
+  };
+}
+
+// ---------------- Categories ----------------
+const CATEGORY_OPTIONS = [
+  { value: "fixos", label: "Fixos" },
+  { value: "mercado", label: "Mercado" },
+  { value: "aleatorios", label: "Aleatórios" },
+  { value: "emprestado", label: "Emprestado" },
+
+  // New
+  { value: "gatos", label: "Gatos" },
+  { value: "lanches", label: "Lanches" },
+  { value: "dinheiro", label: "No dinheiro (papel)" },
+  { value: "carro", label: "Carro" },
+  { value: "farmacia", label: "Farmácia" },
+];
+
+const CATEGORY_LABEL = Object.fromEntries(CATEGORY_OPTIONS.map((c) => [c.value, c.label]));
+
+// ---------------- Page ----------------
+export default function Home() {
+  // Expenses
   const [expensesByMonth, setExpensesByMonth] = useState({});
   const [selectedMonth, setSelectedMonth] = useState(toMonthKey());
 
-  // Form (lançamento)
+  // Incomes (editable)
+  const [incomes, setIncomes] = useState({
+    salaries_cents: 0,
+    benefits_cents: 0,
+    food_cents: 0,
+    extra_cents: 0,
+  });
+
+  // Filters
+  const [categoryFilter, setCategoryFilter] = useState("all");
+
+  // Add expense form
   const [category, setCategory] = useState("fixos");
   const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
+  const [amountDigits, setAmountDigits] = useState(""); // digits-only, last 2 are cents
 
-  // Intervalo (mês a mês)
+  // Range
   const [fromMonth, setFromMonth] = useState(toMonthKey());
   const [toMonth, setToMonth] = useState(toMonthKey());
 
-  // NEW: menu com meses/ano (sem teclado)
-  const monthOptions = useMemo(
-    () => buildMonthOptions(toMonthKey(), 24, 12),
-    []
-  );
+  // Month dropdown options
+  const monthOptions = useMemo(() => buildMonthOptions(toMonthKey(), 24, 12), []);
 
+  // Current month list
   const currentList = expensesByMonth[selectedMonth] || [];
 
-  // ---- Load/Save LocalStorage ----
+  // ---------------- Load/Save LocalStorage ----------------
   useEffect(() => {
-    const saved = localStorage.getItem("expensesByMonth_v1");
-    if (saved) {
+    // expenses
+    const savedExp = localStorage.getItem("expensesByMonth_v1");
+    if (savedExp) {
       try {
-        setExpensesByMonth(JSON.parse(saved));
+        const parsed = JSON.parse(savedExp);
+        setExpensesByMonth(normalizeExpensesByMonth(parsed));
       } catch {
         setExpensesByMonth({});
+      }
+    }
+
+    // incomes
+    const savedInc = localStorage.getItem("incomes_v2");
+    if (savedInc) {
+      try {
+        setIncomes(normalizeIncomes(JSON.parse(savedInc)));
+      } catch {
+        setIncomes(normalizeIncomes(null));
+      }
+    } else {
+      // Try older keys if exists in your old codebase
+      const legacyInc = localStorage.getItem("incomes_v1");
+      if (legacyInc) {
+        try {
+          setIncomes(normalizeIncomes(JSON.parse(legacyInc)));
+        } catch {
+          setIncomes(normalizeIncomes(null));
+        }
+      } else {
+        setIncomes(normalizeIncomes(null));
       }
     }
   }, []);
@@ -127,24 +235,67 @@ export default function Home() {
     localStorage.setItem("expensesByMonth_v1", JSON.stringify(expensesByMonth));
   }, [expensesByMonth]);
 
-  // ---- Totais do mês selecionado ----
-  const totalExpenses = useMemo(() => {
-    return currentList.reduce((sum, e) => sum + (e.amount || 0), 0);
+  useEffect(() => {
+    localStorage.setItem("incomes_v2", JSON.stringify(incomes));
+  }, [incomes]);
+
+  // ---------------- Totals ----------------
+  const incomeTotalCents = useMemo(() => {
+    return (
+      (incomes.salaries_cents || 0) +
+      (incomes.benefits_cents || 0) +
+      (incomes.food_cents || 0) +
+      (incomes.extra_cents || 0)
+    );
+  }, [incomes]);
+
+  const filteredList = useMemo(() => {
+    if (categoryFilter === "all") return currentList;
+    return currentList.filter((e) => e.category === categoryFilter);
+  }, [currentList, categoryFilter]);
+
+  // Group “same names”: group by description + category (normalized)
+  const grouped = useMemo(() => {
+    const map = new Map();
+    for (const e of filteredList) {
+      const descKey = (e.description || "").trim().toLowerCase();
+      const key = `${e.category}__${descKey}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          category: e.category,
+          description: e.description,
+          total_cents: 0,
+          ids: [],
+          count: 0,
+          lastCreatedAt: e.createdAt,
+        });
+      }
+      const g = map.get(key);
+      g.total_cents += e.amount_cents || 0;
+      g.ids.push(e.id);
+      g.count += 1;
+      if (e.createdAt > g.lastCreatedAt) g.lastCreatedAt = e.createdAt;
+    }
+    // Show newest first
+    return Array.from(map.values()).sort((a, b) => (b.lastCreatedAt || "").localeCompare(a.lastCreatedAt || ""));
+  }, [filteredList]);
+
+  const totalExpensesCents = useMemo(() => {
+    return currentList.reduce((sum, e) => sum + (e.amount_cents || 0), 0);
   }, [currentList]);
 
-  const balance = incomeTotal - totalExpenses;
+  const balanceCents = useMemo(() => incomeTotalCents - totalExpensesCents, [incomeTotalCents, totalExpensesCents]);
 
   const totalsByCategory = useMemo(() => {
-    return currentList.reduce(
-      (acc, e) => {
-        acc[e.category] = (acc[e.category] || 0) + (e.amount || 0);
-        return acc;
-      },
-      { fixos: 0, mercado: 0, aleatorios: 0, emprestado: 0 }
-    );
+    const init = Object.fromEntries(CATEGORY_OPTIONS.map((c) => [c.value, 0]));
+    for (const e of currentList) {
+      init[e.category] = (init[e.category] || 0) + (e.amount_cents || 0);
+    }
+    return init;
   }, [currentList]);
 
-  // ---- Actions ----
+  // ---------------- Actions ----------------
   function addExpenseToMonth(monthKey, expense) {
     setExpensesByMonth((prev) => {
       const list = prev[monthKey] || [];
@@ -152,56 +303,68 @@ export default function Home() {
     });
   }
 
-  function handleAddSingle() {
-    const value = parseMoneyToNumber(amount);
-    if (!description.trim()) return alert("Descreva o gasto.");
-    if (value === null || value <= 0) return alert("Valor inválido.");
-
-    const expense = {
+  function buildExpense(amount_cents, meta) {
+    return {
       id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
       category,
       description: description.trim(),
-      amount: value,
+      amount_cents,
       createdAt: new Date().toISOString(),
-      meta: { type: "single" },
+      meta,
     };
+  }
 
-    addExpenseToMonth(selectedMonth, expense);
+  function resetExpenseForm() {
     setDescription("");
-    setAmount("");
+    setAmountDigits("");
+  }
+
+  function handleAddSingle() {
+    if (!description.trim()) return alert("Descreva o gasto.");
+    const amount_cents = digitsToCents(amountDigits);
+    if (amount_cents <= 0) return alert("Valor inválido.");
+
+    addExpenseToMonth(selectedMonth, buildExpense(amount_cents, { type: "single" }));
+    resetExpenseForm();
   }
 
   function handleAddRange() {
-    const value = parseMoneyToNumber(amount);
     if (!description.trim()) return alert("Descreva o gasto.");
-    if (value === null || value <= 0) return alert("Valor inválido.");
+    const amount_cents = digitsToCents(amountDigits);
+    if (amount_cents <= 0) return alert("Valor inválido.");
 
     const months = listMonthsBetween(fromMonth, toMonth);
     if (months.length === 0) return alert("Intervalo inválido (De > Até).");
 
     const seriesId = crypto?.randomUUID ? crypto.randomUUID() : `series_${Date.now()}`;
-
     months.forEach((monthKey) => {
-      const expense = {
-        id: crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}_${monthKey}`,
-        category,
-        description: description.trim(),
-        amount: value,
-        createdAt: new Date().toISOString(),
-        meta: { type: "range", seriesId, fromMonth, toMonth },
-      };
-      addExpenseToMonth(monthKey, expense);
+      addExpenseToMonth(
+        monthKey,
+        buildExpense(amount_cents, { type: "range", seriesId, fromMonth, toMonth })
+      );
     });
 
-    setDescription("");
-    setAmount("");
-    alert(`Lançado em ${months.length} mês(es): ${months.join(", ")}`);
+    resetExpenseForm();
+    alert(`Lançado em ${months.length} mês(es).`);
   }
 
-  function removeExpense(monthKey, id) {
+  function removeGroup(monthKey, ids) {
+    if (!confirm(`Excluir ${ids.length} item(ns) desse grupo?`)) return;
     setExpensesByMonth((prev) => {
       const list = prev[monthKey] || [];
-      return { ...prev, [monthKey]: list.filter((e) => e.id !== id) };
+      const idSet = new Set(ids);
+      return { ...prev, [monthKey]: list.filter((e) => !idSet.has(e.id)) };
+    });
+  }
+
+  function updateCategoryForGroup(monthKey, ids, newCategory) {
+    setExpensesByMonth((prev) => {
+      const list = prev[monthKey] || [];
+      const idSet = new Set(ids);
+      return {
+        ...prev,
+        [monthKey]: list.map((e) => (idSet.has(e.id) ? { ...e, category: newCategory } : e)),
+      };
     });
   }
 
@@ -214,7 +377,7 @@ export default function Home() {
     });
   }
 
-  // ---------- UI ----------
+  // ---------------- UI ----------------
   return (
     <main className="min-h-screen p-4 bg-gray-100">
       <div className="max-w-3xl mx-auto space-y-4">
@@ -222,12 +385,10 @@ export default function Home() {
           <div>
             <h1 className="text-2xl font-bold">Controle de Gastos</h1>
             <p className="text-sm text-gray-600">
-              Visualizando o mês:{" "}
-              <span className="font-semibold">{selectedMonth}</span>
+              Visualizando: <span className="font-semibold">{monthLabel(selectedMonth)}</span>
             </p>
           </div>
 
-          {/* MENU MÊS/ANO (Opção B) */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">Mês</span>
             <select
@@ -244,21 +405,58 @@ export default function Home() {
           </div>
         </header>
 
+        {/* Summary */}
         <section className="bg-white rounded-2xl shadow p-4">
           <div className="grid md:grid-cols-3 gap-3">
-            <SummaryCard title="Receitas (fixas)" value={formatBRL(incomeTotal)} />
-            <SummaryCard title="Gastos do mês" value={formatBRL(totalExpenses)} />
-            <SummaryCard title="Saldo do mês" value={formatBRL(balance)} />
+            <SummaryCard title="Ganhos (total)" value={formatBRLFromCents(incomeTotalCents)} />
+            <SummaryCard title="Gastos do mês" value={formatBRLFromCents(totalExpensesCents)} />
+            <SummaryCard title="Saldo do mês" value={formatBRLFromCents(balanceCents)} />
           </div>
 
-          <div className="grid md:grid-cols-4 gap-3 mt-4">
-            <MiniCard title="Fixos" value={formatBRL(totalsByCategory.fixos)} />
-            <MiniCard title="Mercado" value={formatBRL(totalsByCategory.mercado)} />
-            <MiniCard title="Aleatórios" value={formatBRL(totalsByCategory.aleatorios)} />
-            <MiniCard title="Emprestado" value={formatBRL(totalsByCategory.emprestado)} />
+          <div className="grid md:grid-cols-3 gap-3 mt-4">
+            <MiniCard title="Fixos" value={formatBRLFromCents(totalsByCategory.fixos)} />
+            <MiniCard title="Mercado" value={formatBRLFromCents(totalsByCategory.mercado)} />
+            <MiniCard title="Carro" value={formatBRLFromCents(totalsByCategory.carro)} />
           </div>
         </section>
 
+        {/* Incomes editable */}
+        <section className="bg-white rounded-2xl shadow p-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="text-lg font-semibold">Ganhos</h2>
+              <p className="text-sm text-gray-600">Edite os valores e o total será recalculado automaticamente.</p>
+            </div>
+            <div className="text-sm text-gray-600">
+              Total: <span className="font-semibold">{formatBRLFromCents(incomeTotalCents)}</span>
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-4 gap-2 mt-3">
+            <MoneyField
+              label="Salários"
+              cents={incomes.salaries_cents}
+              onChangeCents={(c) => setIncomes((p) => ({ ...p, salaries_cents: c }))}
+            />
+            <MoneyField
+              label="Benefícios"
+              cents={incomes.benefits_cents}
+              onChangeCents={(c) => setIncomes((p) => ({ ...p, benefits_cents: c }))}
+            />
+            <MoneyField
+              label="Vale alimentação"
+              cents={incomes.food_cents}
+              onChangeCents={(c) => setIncomes((p) => ({ ...p, food_cents: c }))}
+            />
+            <MoneyField
+              label="Extra"
+              cents={incomes.extra_cents}
+              onChangeCents={(c) => setIncomes((p) => ({ ...p, extra_cents: c }))}
+            />
+          </div>
+        </section>
+
+        {/* Add expense */}
         <section className="bg-white rounded-2xl shadow p-4 space-y-3">
           <h2 className="text-lg font-semibold">Adicionar gasto</h2>
 
@@ -268,10 +466,11 @@ export default function Home() {
               value={category}
               onChange={(e) => setCategory(e.target.value)}
             >
-              <option value="fixos">Fixos</option>
-              <option value="mercado">Mercado</option>
-              <option value="aleatorios">Aleatórios</option>
-              <option value="emprestado">Emprestado</option>
+              {CATEGORY_OPTIONS.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
             </select>
 
             <input
@@ -281,20 +480,15 @@ export default function Home() {
               onChange={(e) => setDescription(e.target.value)}
             />
 
-            <input
-              className="border rounded-xl p-3 bg-white"
-              placeholder="Valor (ex: 120,50)"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              inputMode="decimal"
+            <MoneyInput
+              valueDigits={amountDigits}
+              onChangeDigits={setAmountDigits}
+              placeholder="0,00"
             />
           </div>
 
           <div className="flex flex-wrap gap-2 items-center">
-            <button
-              onClick={handleAddSingle}
-              className="rounded-xl bg-black text-white px-4 py-3"
-            >
+            <button onClick={handleAddSingle} className="rounded-xl bg-black text-white px-4 py-3">
               Adicionar só em {selectedMonth}
             </button>
 
@@ -319,51 +513,83 @@ export default function Home() {
                 />
               </div>
 
-              <button
-                onClick={handleAddRange}
-                className="rounded-xl border bg-white px-4 py-2"
-              >
+              <button onClick={handleAddRange} className="rounded-xl border bg-white px-4 py-2">
                 Aplicar no intervalo
               </button>
             </div>
           </div>
 
           <p className="text-sm text-gray-600">
-            Dica: “Aplicar no intervalo” serve pra despesas recorrentes (aluguel,
-            internet, academia etc.).
+            Campo de valor formata automaticamente: digite só números (ex: “123456” vira “1.234,56”).
           </p>
         </section>
 
+        {/* Filters + List */}
         <section className="bg-white rounded-2xl shadow p-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <h2 className="text-lg font-semibold">
-              Lançamentos de {selectedMonth}
-            </h2>
-            <button
-              onClick={() => clearMonth(selectedMonth)}
-              className="rounded-xl border bg-white px-4 py-2"
-            >
-              Limpar mês
-            </button>
+            <div>
+              <h2 className="text-lg font-semibold">Lançamentos</h2>
+              <p className="text-sm text-gray-600">Exibindo grupos por (descrição + categoria).</p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">Filtrar</span>
+                <select
+                  className="border rounded-xl p-2 bg-white"
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                >
+                  <option value="all">Todos</option>
+                  {CATEGORY_OPTIONS.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button onClick={() => clearMonth(selectedMonth)} className="rounded-xl border bg-white px-4 py-2">
+                Limpar mês
+              </button>
+            </div>
           </div>
 
           <div className="mt-3 space-y-2">
-            {currentList.map((e) => (
+            {grouped.map((g) => (
               <div
-                key={e.id}
+                key={g.key}
                 className="border rounded-2xl p-3 flex items-center justify-between gap-3 bg-white"
               >
-                <div>
-                  <div className="font-medium">{e.description}</div>
-                  <div className="text-sm text-gray-600">
-                    {e.category}
-                    {e?.meta?.type === "range" ? " • recorrente" : ""}
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{g.description || "(Sem descrição)"}</div>
+                  <div className="text-sm text-gray-600 flex items-center gap-2 flex-wrap">
+                    <span>{CATEGORY_LABEL[g.category] || g.category}</span>
+                    <span>•</span>
+                    <span>{g.count}x</span>
+
+                    {/* Edit category AFTER inserted (applies to the whole group) */}
+                    <span className="ml-2 text-gray-400">Alterar tipo:</span>
+                    <select
+                      className="border rounded-xl p-1.5 bg-white"
+                      value={g.category}
+                      onChange={(e) => updateCategoryForGroup(selectedMonth, g.ids, e.target.value)}
+                    >
+                      {CATEGORY_OPTIONS.map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
+
                 <div className="flex items-center gap-2">
-                  <div className="font-semibold">{formatBRL(e.amount)}</div>
+                  <div className="font-semibold whitespace-nowrap">
+                    {formatBRLFromCents(g.total_cents)}
+                  </div>
                   <button
-                    onClick={() => removeExpense(selectedMonth, e.id)}
+                    onClick={() => removeGroup(selectedMonth, g.ids)}
                     className="rounded-xl border px-3 py-2 bg-white"
                   >
                     Excluir
@@ -372,9 +598,9 @@ export default function Home() {
               </div>
             ))}
 
-            {currentList.length === 0 ? (
+            {grouped.length === 0 ? (
               <p className="text-sm text-gray-600">
-                Nenhum gasto registrado neste mês.
+                Nenhum gasto registrado neste mês (ou nesse filtro).
               </p>
             ) : null}
           </div>
@@ -384,7 +610,7 @@ export default function Home() {
   );
 }
 
-// ---------- UI Components ----------
+// ---------------- UI Components ----------------
 function SummaryCard({ title, value }) {
   return (
     <div className="border rounded-2xl p-4 bg-gray-50">
@@ -400,5 +626,53 @@ function MiniCard({ title, value }) {
       <div className="text-sm text-gray-600">{title}</div>
       <div className="text-lg font-semibold">{value}</div>
     </div>
+  );
+}
+
+// Money input with fixed "R$" prefix and auto thousand separators
+function MoneyInput({ valueDigits, onChangeDigits, placeholder }) {
+  const cents = digitsToCents(valueDigits);
+  const display = centsToBrlInput(cents);
+
+  return (
+    <div className="border rounded-xl bg-white p-3 flex items-center gap-2">
+      <span className="text-gray-500 select-none">R$</span>
+      <input
+        className="w-full outline-none"
+        inputMode="numeric"
+        placeholder={placeholder}
+        value={display}
+        onChange={(e) => {
+          // take whatever user typed, keep only digits
+          const digits = e.target.value.replace(/\D/g, "");
+          onChangeDigits(digits);
+        }}
+      />
+    </div>
+  );
+}
+
+// Smaller money fields for incomes
+function MoneyField({ label, cents, onChangeCents }) {
+  const [digits, setDigits] = useState(String(cents || 0));
+
+  useEffect(() => {
+    setDigits(String(cents || 0));
+  }, [cents]);
+
+  return (
+    <label className="block">
+      <div className="text-sm text-gray-700">{label}</div>
+      <div className="mt-1">
+        <MoneyInput
+          valueDigits={digits}
+          onChangeDigits={(d) => {
+            setDigits(d);
+            onChangeCents(digitsToCents(d));
+          }}
+          placeholder="0,00"
+        />
+      </div>
+    </label>
   );
 }
