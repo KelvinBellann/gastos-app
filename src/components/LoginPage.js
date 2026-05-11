@@ -71,18 +71,18 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen gradient-login flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full">
+      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-block bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full p-4 mb-4">
-            <span className="text-4xl">💰</span>
+        <div className="text-center mb-6">
+          <div className="inline-block bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full p-3 mb-3">
+            <span className="text-3xl">💰</span>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Controle de Gastos</h1>
-          <p className="text-sm text-gray-600 mt-2">Gerencie suas receitas e despesas</p>
+          <h1 className="text-2xl font-bold text-gray-900">Gastos</h1>
+          <p className="text-xs text-gray-600 mt-1">Controle suas finanças</p>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6 bg-gray-100 p-1 rounded-lg">
+        <div className="flex gap-1 mb-5 bg-gray-100 p-1 rounded-lg">
           <button
             type="button"
             onClick={() => {
@@ -90,7 +90,7 @@ export default function LoginPage() {
               setError("");
               setSuccessMsg("");
             }}
-            className={`flex-1 py-2 rounded-md font-medium transition ${
+            className={`flex-1 py-2 rounded-md font-medium text-sm transition ${
               mode === "signin"
                 ? "bg-white text-indigo-600 shadow"
                 : "text-gray-600"
@@ -105,23 +105,23 @@ export default function LoginPage() {
               setError("");
               setSuccessMsg("");
             }}
-            className={`flex-1 py-2 rounded-md font-medium transition ${
+            className={`flex-1 py-2 rounded-md font-medium text-sm transition ${
               mode === "signup"
                 ? "bg-white text-indigo-600 shadow"
                 : "text-gray-600"
             }`}
           >
-            Criar conta
+            Criar
           </button>
         </div>
 
         {/* Form */}
         <form
           onSubmit={mode === "signin" ? handleSignIn : handleSignUp}
-          className="space-y-4"
+          className="space-y-3"
         >
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1">
               Email
             </label>
             <input
@@ -129,14 +129,14 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="seu@email.com"
-              className="w-full border-2 border-gray-200 rounded-xl p-3 focus:outline-none focus:border-indigo-500 transition"
+              className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:border-indigo-500 transition"
               disabled={loading}
               autoComplete="email"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1">
               Senha
             </label>
             <div className="relative">
@@ -145,14 +145,14 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full border-2 border-gray-200 rounded-xl p-3 focus:outline-none focus:border-indigo-500 transition pr-10"
+                className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:border-indigo-500 transition pr-10"
                 disabled={loading}
                 autoComplete={mode === "signin" ? "current-password" : "new-password"}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 transition"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 transition text-lg"
                 disabled={loading}
               >
                 {showPassword ? "👁️" : "👁️‍🗨️"}
@@ -162,12 +162,12 @@ export default function LoginPage() {
 
           {/* Messages */}
           {error && (
-            <div className="p-3 rounded-xl text-sm bg-red-50 text-red-700 border border-red-200">
+            <div className="p-2.5 rounded-lg text-xs bg-red-50 text-red-700 border border-red-200">
               {error}
             </div>
           )}
           {successMsg && (
-            <div className="p-3 rounded-xl text-sm bg-green-50 text-green-700 border border-green-200">
+            <div className="p-2.5 rounded-lg text-xs bg-green-50 text-green-700 border border-green-200">
               {successMsg}
             </div>
           )}
@@ -176,17 +176,17 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading || !email || password.length < 6}
-            className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-semibold py-3 rounded-xl hover:shadow-lg transition disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-semibold py-3 rounded-lg hover:shadow-lg transition disabled:opacity-60 disabled:cursor-not-allowed text-sm"
           >
             {loading ? "Processando..." : mode === "signin" ? "Entrar" : "Criar conta"}
           </button>
         </form>
 
         {/* Footer */}
-        <p className="text-center text-xs text-gray-500 mt-6">
+        <p className="text-center text-xs text-gray-400 mt-4">
           {mode === "signin"
-            ? "Não tem conta? Clique em Criar conta acima."
-            : "Já tem conta? Clique em Entrar acima."}
+            ? "Sem conta? Clique em Criar acima"
+            : "Tem conta? Clique em Entrar acima"}
         </p>
       </div>
     </div>

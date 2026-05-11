@@ -14,6 +14,7 @@ const geistMono = Geist_Mono({
 export const metadata = {
   title: "Controle de Gastos",
   description: "Gerencie suas receitas e despesas com estilo",
+  viewport: "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0",
 };
 
 export default function RootLayout({ children }) {
