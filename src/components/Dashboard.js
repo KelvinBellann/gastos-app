@@ -61,15 +61,15 @@ const DEFAULT_INCOME = {
 };
 
 const CATEGORIES = [
-  { value: "fixos", label: "Fixos", icon: "🏠", color: "bg-blue-100 text-blue-700 border-blue-300" },
-  { value: "mercado", label: "Mercado", icon: "🛒", color: "bg-green-100 text-green-700 border-green-300" },
-  { value: "aleatorios", label: "Aleatórios", icon: "❓", color: "bg-orange-100 text-orange-700 border-orange-300" },
-  { value: "emprestado", label: "Emprestado", icon: "🤝", color: "bg-purple-100 text-purple-700 border-purple-300" },
-  { value: "gatos", label: "Gatos", icon: "🐱", color: "bg-pink-100 text-pink-700 border-pink-300" },
-  { value: "lanches", label: "Lanches", icon: "🍔", color: "bg-yellow-100 text-yellow-700 border-yellow-300" },
-  { value: "dinheiro", label: "Dinheiro", icon: "💵", color: "bg-gray-100 text-gray-700 border-gray-300" },
-  { value: "carro", label: "Carro", icon: "🚗", color: "bg-indigo-100 text-indigo-700 border-indigo-300" },
-  { value: "farmacia", label: "Farmácia", icon: "💊", color: "bg-red-100 text-red-700 border-red-300" },
+  { value: "fixos", label: "Fixos", icon: "🏠", color: "bg-slate-100 text-slate-700 border-slate-200" },
+  { value: "mercado", label: "Mercado", icon: "🛒", color: "bg-stone-100 text-stone-700 border-stone-200" },
+  { value: "aleatorios", label: "Aleatórios", icon: "❓", color: "bg-zinc-100 text-zinc-700 border-zinc-200" },
+  { value: "emprestado", label: "Emprestado", icon: "🤝", color: "bg-neutral-100 text-neutral-700 border-neutral-200" },
+  { value: "gatos", label: "Gatos", icon: "🐱", color: "bg-rose-50 text-rose-700 border-rose-100" },
+  { value: "lanches", label: "Lanches", icon: "🍔", color: "bg-amber-50 text-amber-700 border-amber-100" },
+  { value: "dinheiro", label: "Dinheiro", icon: "💵", color: "bg-gray-100 text-gray-600 border-gray-200" },
+  { value: "carro", label: "Carro", icon: "🚗", color: "bg-slate-100 text-slate-700 border-slate-200" },
+  { value: "farmacia", label: "Farmácia", icon: "💊", color: "bg-rose-50 text-rose-600 border-rose-100" },
 ];
 
 const CATEGORY_MAP = Object.fromEntries(CATEGORIES.map((c) => [c.value, c]));
@@ -287,35 +287,35 @@ export default function Dashboard({ session, onSignOut }) {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <main className="min-h-screen bg-[#F5F0EB] flex flex-col">
       {/* Header */}
-      <header className="gradient-primary shadow-lg text-white sticky top-0 z-10">
+      <header className="bg-[#2C2C2C] text-white sticky top-0 z-10" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-4 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">💰 Gastos</h1>
-            <p className="text-indigo-100 text-xs mt-0.5">
+            <h1 className="text-xl font-bold">💰 Gastos</h1>
+            <p className="text-stone-400 text-xs mt-0.5">
               {monthLabel(monthKey)}
             </p>
           </div>
           <button
             onClick={onSignOut}
-            className="bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg transition text-sm font-medium"
+            className="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg transition text-sm font-medium"
           >
             Sair
           </button>
         </div>
       </header>
 
-      <div className="px-4 py-4 space-y-4 pb-20">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
         {/* Mês e Filtro */}
-        <div className="bg-white rounded-xl shadow-sm p-3 space-y-3">
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-stone-200 p-4 space-y-3">
           <div className="flex gap-2 items-center">
-            <label className="text-sm font-medium text-gray-600 whitespace-nowrap">Mês:</label>
+            <label className="text-sm font-medium text-stone-700 whitespace-nowrap">Mês:</label>
             <input
               type="month"
               value={monthKey}
               onChange={(e) => setMonthKey(e.target.value)}
-              className="flex-1 border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="flex-1 border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
             />
           </div>
 
@@ -331,8 +331,8 @@ export default function Dashboard({ session, onSignOut }) {
                 onClick={() => setFilter(opt.value)}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
                   filter === opt.value
-                    ? "bg-indigo-500 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    ? "bg-[#3D3D3D] text-white"
+                    : "bg-stone-100 text-stone-600 hover:bg-stone-200"
                 }`}
               >
                 {opt.label}
@@ -343,42 +343,44 @@ export default function Dashboard({ session, onSignOut }) {
 
         {/* Error & Success */}
         {err && (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-xl text-sm">
+          <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm">
             {err}
           </div>
         )}
         {successMsg && (
-          <div className="bg-green-50 border border-green-200 text-green-700 p-3 rounded-xl text-sm">
+          <div className="bg-green-50 border border-green-200 text-green-700 p-3 rounded-lg text-sm">
             {successMsg}
           </div>
         )}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-gradient-to-br from-green-400 to-green-600 rounded-xl shadow-sm p-4 text-white text-center">
-            <p className="text-xs opacity-90 mb-1">Receitas</p>
-            <p className="text-lg font-bold">{formatBRLFromCents(totals.incomeTotal)}</p>
+          <div className="bg-[#EDF4F0] border border-stone-200 rounded-xl p-4 text-center">
+            <p className="text-xs text-stone-600 mb-1">Receitas</p>
+            <p className="text-lg font-bold text-[#2D5F45]">{formatBRLFromCents(totals.incomeTotal)}</p>
           </div>
-          <div className="bg-gradient-to-br from-red-400 to-red-600 rounded-xl shadow-sm p-4 text-white text-center">
-            <p className="text-xs opacity-90 mb-1">Gastos</p>
-            <p className="text-lg font-bold">{formatBRLFromCents(totals.expensesTotal)}</p>
+          <div className="bg-[#F4EDEE] border border-stone-200 rounded-xl p-4 text-center">
+            <p className="text-xs text-stone-600 mb-1">Gastos</p>
+            <p className="text-lg font-bold text-[#7A3030]">{formatBRLFromCents(totals.expensesTotal)}</p>
           </div>
-          <div
-            className={`bg-gradient-to-br rounded-xl shadow-sm p-4 text-white text-center ${
+          <div className={`border border-stone-200 rounded-xl p-4 text-center ${
+            totals.balance >= 0
+              ? "bg-[#EEF0F4]"
+              : "bg-[#F4F0EC]"
+          }`}>
+            <p className="text-xs text-stone-600 mb-1">Saldo</p>
+            <p className={`text-lg font-bold ${
               totals.balance >= 0
-                ? "from-blue-400 to-blue-600"
-                : "from-orange-400 to-orange-600"
-            }`}
-          >
-            <p className="text-xs opacity-90 mb-1">Saldo</p>
-            <p className="text-lg font-bold">{formatBRLFromCents(totals.balance)}</p>
+                ? "text-[#2E3F5F]"
+                : "text-[#5F4020]"
+            }`}>{formatBRLFromCents(totals.balance)}</p>
           </div>
         </div>
 
         {/* Receitas Section */}
-        <div className="bg-white rounded-xl shadow-sm p-4">
-          <h2 className="text-lg font-bold text-gray-900 mb-1">📊 Receitas do mês</h2>
-          <p className="text-xs text-gray-500 mb-3">Edite os valores (salva automaticamente)</p>
+        <div className="bg-white rounded-2xl border border-stone-100 p-4">
+          <h2 className="text-lg font-bold text-stone-900 mb-1">📊 Receitas do mês</h2>
+          <p className="text-xs text-stone-500 mb-3">Edite os valores (salva automaticamente)</p>
           <div className="grid grid-cols-2 gap-2">
             <MoneyField
               label="Seu salário"
@@ -404,13 +406,13 @@ export default function Dashboard({ session, onSignOut }) {
         </div>
 
         {/* Add Expense Section */}
-        <div className="bg-white rounded-xl shadow-sm p-4 sticky bottom-20">
-          <h2 className="text-lg font-bold text-gray-900 mb-3">➕ Novo gasto</h2>
+        <div className="bg-white rounded-2xl border-t border-stone-200 shadow-lg p-4">
+          <h2 className="text-lg font-bold text-stone-900 mb-3">➕ Novo gasto</h2>
           <div className="space-y-2">
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-stone-300 rounded-lg p-3 text-sm focus:outline-none focus:border-stone-600"
             >
               {CATEGORIES.map((c) => (
                 <option key={c.value} value={c.value}>
@@ -423,7 +425,7 @@ export default function Dashboard({ session, onSignOut }) {
               placeholder="O que foi gasto?"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-stone-300 rounded-lg p-3 text-sm focus:outline-none focus:border-stone-600"
             />
 
             <div className="flex gap-2">
@@ -432,12 +434,12 @@ export default function Dashboard({ session, onSignOut }) {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 inputMode="decimal"
-                className="flex-1 border border-gray-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="flex-1 border border-stone-300 rounded-lg p-3 text-sm focus:outline-none focus:border-stone-600"
               />
               <button
                 onClick={addExpense}
                 disabled={busy}
-                className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white px-4 rounded-lg font-bold hover:shadow-lg transition disabled:opacity-60 whitespace-nowrap text-sm"
+                className="bg-[#3D3D3D] text-white px-4 rounded-lg font-bold hover:bg-[#2C2C2C] transition disabled:opacity-60 whitespace-nowrap text-sm"
               >
                 {busy ? "..." : "Salvar"}
               </button>
@@ -461,15 +463,15 @@ export default function Dashboard({ session, onSignOut }) {
         </div>
 
         {/* Expenses List */}
-        <div className="bg-white rounded-xl shadow-sm p-4">
-          <h2 className="text-lg font-bold text-gray-900 mb-3">📝 Lançamentos ({filteredExpenses.length})</h2>
-          <div className="space-y-2 max-h-96 overflow-y-auto">
+        <div className="bg-white rounded-2xl border border-stone-100 p-4">
+          <h2 className="text-lg font-bold text-stone-900 mb-3">📝 Lançamentos ({filteredExpenses.length})</h2>
+          <div className="space-y-2">
             {filteredExpenses.length === 0 ? (
-              <p className="text-gray-500 text-center py-4 text-sm">Nenhum gasto registrado.</p>
+              <p className="text-stone-500 text-center py-4 text-sm">Nenhum gasto registrado.</p>
             ) : (
               groupedExpenses.map(({ period, items }) => (
                 <div key={period}>
-                  <p className="text-xs font-bold text-gray-600 my-2 px-2">{period}</p>
+                  <p className="text-xs font-bold text-stone-600 my-2 px-2">{period}</p>
                   {items.map((e) => {
                     const catInfo = CATEGORY_MAP[e.category] || {
                       label: e.category,
@@ -479,14 +481,14 @@ export default function Dashboard({ session, onSignOut }) {
                     return (
                       <div
                         key={e.id}
-                        className="border border-gray-200 rounded-lg p-3 flex items-center justify-between hover:bg-gray-50 transition text-sm"
+                        className="bg-white border border-stone-100 rounded-xl p-3 flex items-center justify-between hover:bg-stone-50 transition text-sm"
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-gray-900 flex items-center gap-1">
+                          <div className="font-semibold text-stone-900 flex items-center gap-1">
                             <span>{catInfo.icon}</span>
                             <span className="truncate">{e.description}</span>
                           </div>
-                          <div className="text-xs text-gray-500 mt-1">
+                          <div className="text-xs text-stone-500 mt-1">
                             {formatDatePT(e.date)}
                           </div>
                         </div>
@@ -497,33 +499,33 @@ export default function Dashboard({ session, onSignOut }) {
                               value={editAmount}
                               onChange={(e) => setEditAmount(e.target.value)}
                               inputMode="decimal"
-                              className="w-20 border border-indigo-300 rounded p-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              className="w-20 border border-stone-300 rounded p-1 text-xs focus:outline-none focus:border-stone-600"
                             />
                             <button
                               onClick={() => saveEdit(e.id)}
                               disabled={busy}
-                              className="bg-green-500 text-white px-2 py-1 rounded text-xs font-medium hover:bg-green-600 transition"
+                              className="bg-[#4A7C59] text-white px-2 py-1 rounded text-xs font-medium hover:bg-[#3D6A4A] transition"
                             >
                               ✓
                             </button>
                             <button
                               onClick={cancelEdit}
                               disabled={busy}
-                              className="bg-gray-400 text-white px-2 py-1 rounded text-xs font-medium hover:bg-gray-500 transition"
+                              className="bg-stone-400 text-white px-2 py-1 rounded text-xs font-medium hover:bg-stone-500 transition"
                             >
                               ✕
                             </button>
                           </div>
                         ) : (
                           <div className="flex items-center gap-1 ml-2">
-                            <div className="font-bold text-gray-900 min-w-max">
+                            <div className="font-semibold text-stone-900 min-w-max">
                               {formatBRLFromCents(e.amount_cents)}
                             </div>
                             <div className="flex gap-1">
                               <button
                                 onClick={() => startEdit(e)}
                                 disabled={busy || editingId}
-                                className="text-blue-500 hover:text-blue-700 font-bold text-lg transition disabled:opacity-50"
+                                className="text-stone-400 hover:text-stone-700 font-bold text-lg transition disabled:opacity-50"
                                 title="Editar"
                               >
                                 ✎
@@ -531,7 +533,7 @@ export default function Dashboard({ session, onSignOut }) {
                               <button
                                 onClick={() => deleteExpense(e.id)}
                                 disabled={busy || editingId}
-                                className="text-red-500 hover:text-red-700 font-bold text-lg transition disabled:opacity-50"
+                                className="text-stone-400 hover:text-red-500 font-bold text-lg transition disabled:opacity-50"
                                 title="Deletar"
                               >
                                 ✕
@@ -561,13 +563,13 @@ function MoneyField({ label, value, onChange }) {
 
   return (
     <label className="block">
-      <div className="text-xs font-medium text-gray-700 mb-1">{label}</div>
+      <div className="text-xs font-medium text-stone-700 mb-1">{label}</div>
       <input
         value={local}
         onChange={(e) => setLocal(e.target.value)}
         onBlur={() => onChange(local)}
         inputMode="decimal"
-        className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        className="w-full border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
       />
     </label>
   );

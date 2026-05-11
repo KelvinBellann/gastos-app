@@ -84,18 +84,18 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen gradient-login flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
+      <div className="bg-white rounded-2xl shadow-sm p-6 max-w-sm w-full border border-stone-200">
         {/* Header */}
         <div className="text-center mb-6">
-          <div className="inline-block bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full p-3 mb-3">
+          <div className="inline-block bg-[#3D3D3D] rounded-full p-3 mb-3">
             <span className="text-3xl">💰</span>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Gastos</h1>
-          <p className="text-xs text-gray-600 mt-1">Controle suas finanças</p>
+          <h1 className="text-2xl font-bold text-stone-800">Gastos</h1>
+          <p className="text-xs text-stone-500 mt-1">Controle suas finanças</p>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-5 bg-gray-100 p-1 rounded-lg">
+        <div className="flex gap-1 mb-5 bg-stone-100 p-1 rounded-lg">
           <button
             type="button"
             onClick={() => {
@@ -105,8 +105,8 @@ export default function LoginPage() {
             }}
             className={`flex-1 py-2 rounded-md font-medium text-sm transition ${
               mode === "signin"
-                ? "bg-white text-indigo-600 shadow"
-                : "text-gray-600"
+                ? "bg-[#3D3D3D] text-white shadow"
+                : "text-stone-600"
             }`}
           >
             Entrar
@@ -120,8 +120,8 @@ export default function LoginPage() {
             }}
             className={`flex-1 py-2 rounded-md font-medium text-sm transition ${
               mode === "signup"
-                ? "bg-white text-indigo-600 shadow"
-                : "text-gray-600"
+                ? "bg-[#3D3D3D] text-white shadow"
+                : "text-stone-600"
             }`}
           >
             Criar
@@ -134,7 +134,7 @@ export default function LoginPage() {
           className="space-y-3"
         >
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+            <label className="block text-xs font-medium text-stone-700 mb-1">
               Email
             </label>
             <input
@@ -142,14 +142,14 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="seu@email.com"
-              className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:border-indigo-500 transition"
+              className="w-full border-2 border-stone-300 rounded-lg p-3 text-sm focus:outline-none focus:border-stone-600 transition"
               disabled={loading}
               autoComplete="email"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+            <label className="block text-xs font-medium text-stone-700 mb-1">
               Senha
             </label>
             <div className="relative">
@@ -158,14 +158,14 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:border-indigo-500 transition pr-10"
+                className="w-full border-2 border-stone-300 rounded-lg p-3 text-sm focus:outline-none focus:border-stone-600 transition pr-10"
                 disabled={loading}
                 autoComplete={mode === "signin" ? "current-password" : "new-password"}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 transition text-lg"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-700 transition text-lg"
                 disabled={loading}
               >
                 {showPassword ? "👁️" : "👁️‍🗨️"}
@@ -189,14 +189,14 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading || !email || password.length < 6}
-            className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-semibold py-3 rounded-lg hover:shadow-lg transition disabled:opacity-60 disabled:cursor-not-allowed text-sm"
+            className="w-full bg-[#3D3D3D] text-white font-semibold py-3 rounded-lg hover:bg-[#2C2C2C] transition disabled:opacity-60 disabled:cursor-not-allowed text-sm"
           >
             {loading ? "Processando..." : mode === "signin" ? "Entrar" : "Criar conta"}
           </button>
         </form>
 
         {/* Footer */}
-        <p className="text-center text-xs text-gray-400 mt-4">
+        <p className="text-center text-xs text-stone-400 mt-4">
           {mode === "signin"
             ? "Sem conta? Clique em Criar acima"
             : "Tem conta? Clique em Entrar acima"}
