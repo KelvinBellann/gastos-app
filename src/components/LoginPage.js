@@ -30,13 +30,20 @@ export default function LoginPage() {
     if (!validate()) return;
 
     setLoading(true);
+    setError("");
     const { error: err } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (err) {
-      setError(err.message);
+      if (err.message.includes("Email not confirmed")) {
+        setError("Email não confirmado. Verifique seu email e clique no link de confirmação.");
+      } else if (err.message.includes("Invalid login credentials")) {
+        setError("Email ou senha incorretos.");
+      } else {
+        setError(err.message);
+      }
       setLoading(false);
       return;
     }
@@ -49,7 +56,8 @@ export default function LoginPage() {
     if (!validate()) return;
 
     setLoading(true);
-    const { error: err } = await supabase.auth.signUp({
+    setError("");
+    const { data, error: err } = await supabase.auth.signUp({
       email,
       password,
     });
@@ -60,13 +68,18 @@ export default function LoginPage() {
       return;
     }
 
-    setSuccessMsg("✓ Conta criada! Confirme seu email ou faça login agora.");
+    if (data?.user && !data.user.confirmed_at) {
+      setSuccessMsg("✓ Conta criada! Verifique seu email para confirmar a conta.");
+    } else {
+      setSuccessMsg("✓ Conta criada! Você já pode fazer login.");
+    }
+
     setPassword("");
     setLoading(false);
     setTimeout(() => {
       setMode("signin");
       setSuccessMsg("");
-    }, 2000);
+    }, 3000);
   }
 
   return (
