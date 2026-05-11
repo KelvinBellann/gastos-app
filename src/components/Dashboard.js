@@ -93,20 +93,28 @@ export default function Dashboard({ session, onSignOut }) {
   const filteredExpenses = useMemo(() => {
     if (filter === "todos") return expenses;
 
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    let maxDays;
+    if (filter === "hoje") maxDays = 0;
+    else if (filter === "semana") maxDays = 7;
+    else if (filter === "mes") maxDays = 30;
+    else return expenses;
 
     return expenses.filter((e) => {
-      const expDate = new Date(e.date);
-      expDate.setHours(0, 0, 0, 0);
-      const daysDiff = Math.floor((now - expDate) / (1000 * 60 * 60 * 24));
-
-      if (filter === "hoje") return daysDiff === 0;
-      if (filter === "semana") return daysDiff >= 0 && daysDiff <= 7;
-      if (filter === "mes") return daysDiff >= 0 && daysDiff <= 30;
-      return true;
+      const days = getDaysSinceToday(e.date);
+      return days >= 0 && days <= maxDays;
     });
   }, [expenses, filter]);
+
+  const groupedExpenses = useMemo(() => {
+    const PERIODS = ["Hoje", "Ontem", "Esta semana", "Mês anterior"];
+    const grouped = {};
+    filteredExpenses.forEach((e) => {
+      const period = getPeriodLabel(e.date);
+      if (!grouped[period]) grouped[period] = [];
+      grouped[period].push(e);
+    });
+    return PERIODS.filter((p) => grouped[p]).map((p) => ({ period: p, items: grouped[p] }));
+  }, [filteredExpenses]);
 
   const totals = useMemo(() => {
     const incomeTotal =
@@ -126,16 +134,26 @@ export default function Dashboard({ session, onSignOut }) {
     return { incomeTotal, expensesTotal, balance, byCategory };
   }, [income, filteredExpenses]);
 
+  async function loadExpenses() {
+    const expRes = await supabase
+      .from("expenses")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("month_key", monthKey)
+      .order("created_at", { ascending: false });
+
+    if (expRes.error) setErr(expRes.error.message);
+    else setExpenses(expRes.data || []);
+  }
+
   async function load() {
     setBusy(true);
     setErr("");
 
-    const incRes = await supabase
-      .from("incomes")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("month_key", monthKey)
-      .maybeSingle();
+    const [incRes, expRes] = await Promise.all([
+      supabase.from("incomes").select("*").eq("user_id", userId).eq("month_key", monthKey).maybeSingle(),
+      supabase.from("expenses").select("*").eq("user_id", userId).eq("month_key", monthKey).order("created_at", { ascending: false }),
+    ]);
 
     if (incRes.error) {
       setErr(incRes.error.message);
@@ -146,11 +164,7 @@ export default function Dashboard({ session, onSignOut }) {
     if (!incRes.data) {
       const ins = await supabase
         .from("incomes")
-        .insert({
-          user_id: userId,
-          month_key: monthKey,
-          ...DEFAULT_INCOME,
-        })
+        .insert({ user_id: userId, month_key: monthKey, ...DEFAULT_INCOME })
         .select("*")
         .single();
 
@@ -163,13 +177,6 @@ export default function Dashboard({ session, onSignOut }) {
     } else {
       setIncome(incRes.data);
     }
-
-    const expRes = await supabase
-      .from("expenses")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("month_key", monthKey)
-      .order("created_at", { ascending: false });
 
     if (expRes.error) setErr(expRes.error.message);
     else setExpenses(expRes.data || []);
@@ -209,7 +216,7 @@ export default function Dashboard({ session, onSignOut }) {
         setSuccessMsg("✓ Gasto adicionado!");
         setTimeout(() => setSuccessMsg(""), 2000);
       }
-      await load();
+      await loadExpenses();
     } finally {
       setBusy(false);
     }
@@ -223,13 +230,13 @@ export default function Dashboard({ session, onSignOut }) {
     try {
       const { error } = await supabase.from("expenses").delete().eq("id", id);
       if (error) setErr(error.message);
-      await load();
+      await loadExpenses();
     } finally {
       setBusy(false);
     }
   }
 
-  async function startEdit(expense) {
+  function startEdit(expense) {
     setEditingId(expense.id);
     setEditAmount(formatBRLFromCents(expense.amount_cents).replace("R$", "").trim());
   }
@@ -248,10 +255,13 @@ export default function Dashboard({ session, onSignOut }) {
         .from("expenses")
         .update({ amount_cents: newCents })
         .eq("id", id);
-      if (error) setErr(error.message);
+      if (error) {
+        setErr(error.message);
+        return;
+      }
+      await loadExpenses();
       setEditingId(null);
       setEditAmount("");
-      await load();
     } finally {
       setBusy(false);
     }
@@ -457,98 +467,83 @@ export default function Dashboard({ session, onSignOut }) {
             {filteredExpenses.length === 0 ? (
               <p className="text-gray-500 text-center py-4 text-sm">Nenhum gasto registrado.</p>
             ) : (
-              <>
-                {(() => {
-                  const grouped = {};
-                  filteredExpenses.forEach((e) => {
-                    const period = getPeriodLabel(e.date);
-                    if (!grouped[period]) grouped[period] = [];
-                    grouped[period].push(e);
-                  });
-
-                  const periods = ["Hoje", "Ontem", "Esta semana", "Mês anterior"];
-                  return periods.map((period) => {
-                    if (!grouped[period]) return null;
+              groupedExpenses.map(({ period, items }) => (
+                <div key={period}>
+                  <p className="text-xs font-bold text-gray-600 my-2 px-2">{period}</p>
+                  {items.map((e) => {
+                    const catInfo = CATEGORY_MAP[e.category] || {
+                      label: e.category,
+                      icon: "❓",
+                      color: ""
+                    };
                     return (
-                      <div key={period}>
-                        <p className="text-xs font-bold text-gray-600 my-2 px-2">{period}</p>
-                        {grouped[period].map((e) => {
-                          const catInfo = CATEGORY_MAP[e.category] || {
-                            label: e.category,
-                            icon: "❓",
-                            color: ""
-                          };
-                          return (
-                            <div
-                              key={e.id}
-                              className="border border-gray-200 rounded-lg p-3 flex items-center justify-between hover:bg-gray-50 transition text-sm"
+                      <div
+                        key={e.id}
+                        className="border border-gray-200 rounded-lg p-3 flex items-center justify-between hover:bg-gray-50 transition text-sm"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-gray-900 flex items-center gap-1">
+                            <span>{catInfo.icon}</span>
+                            <span className="truncate">{e.description}</span>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {formatDatePT(e.date)}
+                          </div>
+                        </div>
+                        {editingId === e.id ? (
+                          <div className="flex gap-1 ml-2">
+                            <input
+                              type="text"
+                              value={editAmount}
+                              onChange={(e) => setEditAmount(e.target.value)}
+                              inputMode="decimal"
+                              className="w-20 border border-indigo-300 rounded p-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                            <button
+                              onClick={() => saveEdit(e.id)}
+                              disabled={busy}
+                              className="bg-green-500 text-white px-2 py-1 rounded text-xs font-medium hover:bg-green-600 transition"
                             >
-                              <div className="flex-1 min-w-0">
-                                <div className="font-semibold text-gray-900 flex items-center gap-1">
-                                  <span>{catInfo.icon}</span>
-                                  <span className="truncate">{e.description}</span>
-                                </div>
-                                <div className="text-xs text-gray-500 mt-1">
-                                  {formatDatePT(e.date)}
-                                </div>
-                              </div>
-                              {editingId === e.id ? (
-                                <div className="flex gap-1 ml-2">
-                                  <input
-                                    type="text"
-                                    value={editAmount}
-                                    onChange={(e) => setEditAmount(e.target.value)}
-                                    inputMode="decimal"
-                                    className="w-20 border border-indigo-300 rounded p-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                  />
-                                  <button
-                                    onClick={() => saveEdit(e.id)}
-                                    disabled={busy}
-                                    className="bg-green-500 text-white px-2 py-1 rounded text-xs font-medium hover:bg-green-600 transition"
-                                  >
-                                    ✓
-                                  </button>
-                                  <button
-                                    onClick={cancelEdit}
-                                    disabled={busy}
-                                    className="bg-gray-400 text-white px-2 py-1 rounded text-xs font-medium hover:bg-gray-500 transition"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1 ml-2">
-                                  <div className="font-bold text-gray-900 min-w-max">
-                                    {formatBRLFromCents(e.amount_cents)}
-                                  </div>
-                                  <div className="flex gap-1">
-                                    <button
-                                      onClick={() => startEdit(e)}
-                                      disabled={busy || editingId}
-                                      className="text-blue-500 hover:text-blue-700 font-bold text-lg transition disabled:opacity-50"
-                                      title="Editar"
-                                    >
-                                      ✎
-                                    </button>
-                                    <button
-                                      onClick={() => deleteExpense(e.id)}
-                                      disabled={busy || editingId}
-                                      className="text-red-500 hover:text-red-700 font-bold text-lg transition disabled:opacity-50"
-                                      title="Deletar"
-                                    >
-                                      ✕
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
+                              ✓
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              disabled={busy}
+                              className="bg-gray-400 text-white px-2 py-1 rounded text-xs font-medium hover:bg-gray-500 transition"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 ml-2">
+                            <div className="font-bold text-gray-900 min-w-max">
+                              {formatBRLFromCents(e.amount_cents)}
                             </div>
-                          );
-                        })}
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => startEdit(e)}
+                                disabled={busy || editingId}
+                                className="text-blue-500 hover:text-blue-700 font-bold text-lg transition disabled:opacity-50"
+                                title="Editar"
+                              >
+                                ✎
+                              </button>
+                              <button
+                                onClick={() => deleteExpense(e.id)}
+                                disabled={busy || editingId}
+                                className="text-red-500 hover:text-red-700 font-bold text-lg transition disabled:opacity-50"
+                                title="Deletar"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
-                  });
-                })()}
-              </>
+                  })}
+                </div>
+              ))
             )}
           </div>
         </div>

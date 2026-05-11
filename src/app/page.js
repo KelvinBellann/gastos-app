@@ -1,9 +1,9 @@
-“use client”;
+"use client";
 
-import { useEffect, useState } from “react”;
-import { supabase } from “@/lib/supabaseClient”;
-import LoginPage from “@/components/LoginPage”;
-import Dashboard from “@/components/Dashboard”;
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import LoginPage from "@/components/LoginPage";
+import Dashboard from "@/components/Dashboard";
 
 export default function Home() {
   const [session, setSession] = useState(null);
@@ -15,7 +15,7 @@ export default function Home() {
         const { data } = await supabase.auth.getSession();
         setSession(data?.session);
       } catch (err) {
-        console.error(“Erro ao verificar sessão:”, err);
+        console.error("Erro ao verificar sessão:", err);
       } finally {
         setLoading(false);
       }
@@ -39,9 +39,9 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className=”min-h-screen flex items-center justify-center bg-gradient-to-r from-indigo-500 to-purple-500”>
-        <div className=”text-white text-center”>
-          <div className=”text-4xl mb-4”>💰</div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-indigo-500 to-purple-500">
+        <div className="text-white text-center">
+          <div className="text-4xl mb-4">💰</div>
           <p>Carregando...</p>
         </div>
       </div>
