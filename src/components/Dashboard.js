@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import ReceiptsTab from "./ReceiptsTab";
+import StoreComparison from "./StoreComparison";
+import MoneyInput from "./MoneyInput";
 
 function toMonthKey(date = new Date()) {
   const y = date.getFullYear();
@@ -82,6 +85,7 @@ export default function Dashboard({ session, onSignOut }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [filter, setFilter] = useState("todos");
+  const [activeTab, setActiveTab] = useState("gastos");
 
   const [category, setCategory] = useState("fixos");
   const [description, setDescription] = useState("");
@@ -193,9 +197,9 @@ export default function Dashboard({ session, onSignOut }) {
     setErr("");
     setSuccessMsg("");
 
-    const cents = parseBRLToCents(amount);
+    const cents = typeof amount === 'number' ? amount : 0;
     if (!description.trim()) return setErr("Descreva o gasto.");
-    if (cents === null || cents <= 0) return setErr("Valor inválido.");
+    if (cents <= 0) return setErr("Valor inválido.");
 
     setBusy(true);
     try {
@@ -272,9 +276,10 @@ export default function Dashboard({ session, onSignOut }) {
     setEditAmount("");
   }
 
-  async function updateIncomeField(field, valueStr) {
-    const cents = parseBRLToCents(valueStr);
-    if (cents === null || cents < 0) return;
+  async function updateIncomeField(field, cents) {
+    if (!income) return;
+    if (typeof cents !== 'number' || cents < 0) return;
+
     const next = { ...income, [field]: cents };
     setIncome(next);
 
@@ -306,8 +311,31 @@ export default function Dashboard({ session, onSignOut }) {
         </div>
       </header>
 
+      {/* Tab Navigation */}
+      <div className="bg-white border-b border-stone-200 px-4 flex gap-2 overflow-x-auto sticky top-16 z-10" style={{ top: 'env(safe-area-inset-top)' }}>
+        {[
+          { id: "gastos", label: "💰 Gastos" },
+          { id: "recibos", label: "📸 Recibos" },
+          { id: "comparar", label: "📊 Comparar" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-3 font-medium text-sm whitespace-nowrap border-b-2 transition ${
+              activeTab === tab.id
+                ? "border-[#3D3D3D] text-[#3D3D3D]"
+                : "border-transparent text-stone-600 hover:text-stone-900"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
-        {/* Mês e Filtro */}
+        {activeTab === "gastos" && (
+          <>
+            {/* Mês e Filtro */}
         <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-stone-200 p-4 space-y-3">
           <div className="flex gap-2 items-center">
             <label className="text-sm font-medium text-stone-700 whitespace-nowrap">Mês:</label>
@@ -386,21 +414,25 @@ export default function Dashboard({ session, onSignOut }) {
               label="Seu salário"
               value={income?.salary_net_cents}
               onChange={(v) => updateIncomeField("salary_net_cents", v)}
+              disabled={busy}
             />
             <MoneyField
               label="Multibenefícios"
               value={income?.multibenefits_cents}
               onChange={(v) => updateIncomeField("multibenefits_cents", v)}
+              disabled={busy}
             />
             <MoneyField
               label="Alimentação"
               value={income?.food_cents}
               onChange={(v) => updateIncomeField("food_cents", v)}
+              disabled={busy}
             />
             <MoneyField
               label="Salário esposa"
               value={income?.spouse_salary_cents}
               onChange={(v) => updateIncomeField("spouse_salary_cents", v)}
+              disabled={busy}
             />
           </div>
         </div>
@@ -429,13 +461,13 @@ export default function Dashboard({ session, onSignOut }) {
             />
 
             <div className="flex gap-2">
-              <input
-                placeholder="0,00"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                inputMode="decimal"
-                className="flex-1 border border-stone-300 rounded-lg p-3 text-sm focus:outline-none focus:border-stone-600"
-              />
+              <div className="flex-1">
+                <MoneyInput
+                  value={amount}
+                  onChange={setAmount}
+                  placeholder="0,00"
+                />
+              </div>
               <button
                 onClick={addExpense}
                 disabled={busy}
@@ -549,28 +581,29 @@ export default function Dashboard({ session, onSignOut }) {
             )}
           </div>
         </div>
+          </>
+        )}
+
+        {activeTab === "recibos" && (
+          <ReceiptsTab userId={userId} monthKey={monthKey} />
+        )}
+
+        {activeTab === "comparar" && (
+          <StoreComparison userId={userId} monthKey={monthKey} />
+        )}
       </div>
     </main>
   );
 }
 
-function MoneyField({ label, value, onChange }) {
-  const [local, setLocal] = useState("");
-
-  useEffect(() => {
-    setLocal(((value || 0) / 100).toFixed(2).replace(".", ","));
-  }, [value]);
-
+function MoneyField({ label, value, onChange, disabled }) {
   return (
-    <label className="block">
-      <div className="text-xs font-medium text-stone-700 mb-1">{label}</div>
-      <input
-        value={local}
-        onChange={(e) => setLocal(e.target.value)}
-        onBlur={() => onChange(local)}
-        inputMode="decimal"
-        className="w-full border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
-      />
-    </label>
+    <MoneyInput
+      label={label}
+      value={value}
+      onChange={onChange}
+      placeholder="0,00"
+      disabled={disabled}
+    />
   );
 }

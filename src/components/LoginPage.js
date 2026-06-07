@@ -68,18 +68,31 @@ export default function LoginPage() {
       return;
     }
 
-    if (data?.user && !data.user.confirmed_at) {
-      setSuccessMsg("✓ Conta criada! Verifique seu email para confirmar a conta.");
-    } else {
-      setSuccessMsg("✓ Conta criada! Você já pode fazer login.");
-    }
+    if (data?.user) {
+      setSuccessMsg("✓ Conta criada! Fazendo login automaticamente...");
 
-    setPassword("");
-    setLoading(false);
-    setTimeout(() => {
-      setMode("signin");
-      setSuccessMsg("");
-    }, 3000);
+      setTimeout(async () => {
+        const { error: loginErr } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (loginErr) {
+          setError("Conta criada, mas houve erro ao fazer login. Tente entrar manualmente.");
+          setPassword("");
+          setLoading(false);
+          setTimeout(() => {
+            setMode("signin");
+            setSuccessMsg("");
+          }, 3000);
+        } else {
+          // Auto-login successful - session will be detected by parent component
+          setPassword("");
+          setLoading(false);
+          setSuccessMsg("");
+        }
+      }, 1500);
+    }
   }
 
   return (
