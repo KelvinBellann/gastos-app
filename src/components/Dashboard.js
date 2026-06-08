@@ -277,18 +277,37 @@ export default function Dashboard({ session, onSignOut }) {
   }
 
   async function updateIncomeField(field, cents) {
-    if (!income) return;
-    if (typeof cents !== 'number' || cents < 0) return;
+    if (!income) {
+      setErr("Carregando dados de receitas...");
+      return;
+    }
+    if (typeof cents !== 'number' || cents < 0) {
+      setErr("Valor inválido");
+      return;
+    }
 
+    setErr("");
     const next = { ...income, [field]: cents };
     setIncome(next);
 
-    const { error } = await supabase
-      .from("incomes")
-      .update({ [field]: cents })
-      .eq("id", income.id);
+    try {
+      const { error } = await supabase
+        .from("incomes")
+        .update({ [field]: cents })
+        .eq("id", income.id);
 
-    if (error) setErr(error.message);
+      if (error) {
+        setErr(`Erro ao salvar: ${error.message}`);
+        // Revert local change on error
+        setIncome(income);
+      } else {
+        setSuccessMsg("✓ Receita atualizada!");
+        setTimeout(() => setSuccessMsg(""), 2000);
+      }
+    } catch (err) {
+      setErr(`Erro ao salvar: ${err.message}`);
+      setIncome(income);
+    }
   }
 
   return (
