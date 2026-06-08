@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import ReceiptsTab from "./ReceiptsTab";
 import StoreComparison from "./StoreComparison";
 import MoneyInput from "./MoneyInput";
+import IncomesManager from "./IncomesManager";
 
 function toMonthKey(date = new Date()) {
   const y = date.getFullYear();
@@ -424,37 +425,29 @@ export default function Dashboard({ session, onSignOut }) {
           </div>
         </div>
 
-        {/* Receitas Section */}
-        <div className="bg-white rounded-2xl border border-stone-100 p-4">
-          <h2 className="text-lg font-bold text-stone-900 mb-1">📊 Receitas do mês</h2>
-          <p className="text-xs text-stone-500 mb-3">Edite os valores (salva automaticamente)</p>
-          <div className="grid grid-cols-2 gap-2">
-            <MoneyField
-              label="Seu salário"
-              value={income?.salary_net_cents}
-              onChange={(v) => updateIncomeField("salary_net_cents", v)}
-              disabled={busy}
-            />
-            <MoneyField
-              label="Multibenefícios"
-              value={income?.multibenefits_cents}
-              onChange={(v) => updateIncomeField("multibenefits_cents", v)}
-              disabled={busy}
-            />
-            <MoneyField
-              label="Alimentação"
-              value={income?.food_cents}
-              onChange={(v) => updateIncomeField("food_cents", v)}
-              disabled={busy}
-            />
-            <MoneyField
-              label="Salário esposa"
-              value={income?.spouse_salary_cents}
-              onChange={(v) => updateIncomeField("spouse_salary_cents", v)}
-              disabled={busy}
-            />
-          </div>
-        </div>
+        {/* Receitas Section - Improved */}
+        <IncomesManager
+          userId={userId}
+          monthKey={monthKey}
+          income={income}
+          onUpdate={(updated) => {
+            setIncome(updated);
+            // Save to database
+            Object.keys(updated).forEach((key) => {
+              if (
+                [
+                  "salary_net_cents",
+                  "multibenefits_cents",
+                  "food_cents",
+                  "spouse_salary_cents",
+                ].includes(key) &&
+                updated[key] !== income[key]
+              ) {
+                updateIncomeField(key, updated[key]);
+              }
+            });
+          }}
+        />
 
         {/* Add Expense Section */}
         <div className="bg-white rounded-2xl border-t border-stone-200 shadow-lg p-4">
