@@ -168,11 +168,13 @@ export default function Dashboard({ session, onSignOut }) {
   }, [income, filteredExpenses]);
 
   async function loadExpenses() {
+    // Carregar gastos que aparecem neste mês
+    // Inclui: gastos do mês atual + parcelas de crédito que vencem neste mês
     const expRes = await supabase
       .from("expenses")
       .select("*")
       .eq("user_id", userId)
-      .eq("month_key", monthKey)
+      .or(`month_key.eq.${monthKey},installment_month.eq.${monthKey}`)
       .order("created_at", { ascending: false });
 
     if (expRes.error) setErr(expRes.error.message);
@@ -241,24 +243,69 @@ export default function Dashboard({ session, onSignOut }) {
 
     setBusy(true);
     try {
-      const expenseData = {
-        user_id: userId,
-        month_key: monthKey,
-        category,
-        description: description.trim(),
-        amount_cents: cents,
-        date: new Date().toISOString().slice(0, 10),
-        payment_method: paymentMethod,
-        installments: parseInt(installments),
-        is_paid: isPaid,
-        paid_date: isPaid ? paidDate : null,
-      };
+      // Calcular mês de faturamento baseado no tipo de pagamento
+      let billingMonth = monthKey; // Mês atual por padrão
 
-      console.log("Inserindo gasto:", expenseData);
+      if (paymentMethod === "credit") {
+        // Para crédito, o gasto só aparece no mês seguinte
+        const [year, month] = monthKey.split("-");
+        const nextMonth = parseInt(month) + 1;
+        const nextYear = nextMonth > 12 ? parseInt(year) + 1 : year;
+        const nextMonthPad = nextMonth > 12 ? "01" : String(nextMonth).padStart(2, "0");
+        billingMonth = `${nextYear}-${nextMonthPad}`;
+      }
+
+      // Para crédito, criar múltiplos registros (um por parcela)
+      const expenseEntries = [];
+
+      if (paymentMethod === "credit") {
+        const installmentCount = parseInt(installments);
+        const amountPerInstallment = Math.ceil(cents / installmentCount);
+
+        for (let i = 0; i < installmentCount; i++) {
+          const [year, month] = monthKey.split("-");
+          const installmentMonth = parseInt(month) + i + 1;
+          const installmentYear = installmentMonth > 12 ? parseInt(year) + 1 : year;
+          const installmentMonthPad = (installmentMonth % 12 || 12);
+
+          expenseEntries.push({
+            user_id: userId,
+            month_key: monthKey, // Mês da compra
+            category,
+            description: `${description.trim()} (${i + 1}/${installmentCount})`,
+            amount_cents: i === installmentCount - 1 ? cents - (amountPerInstallment * (installmentCount - 1)) : amountPerInstallment,
+            date: new Date().toISOString().slice(0, 10),
+            payment_method: paymentMethod,
+            installments: installmentCount,
+            installment_number: i + 1,
+            installment_month: `${installmentYear}-${String(installmentMonthPad).padStart(2, "0")}`,
+            is_paid: false,
+            paid_date: null,
+          });
+        }
+      } else {
+        // Débito/PIX aparecem no mês atual
+        expenseEntries.push({
+          user_id: userId,
+          month_key: monthKey,
+          category,
+          description: description.trim(),
+          amount_cents: cents,
+          date: new Date().toISOString().slice(0, 10),
+          payment_method: paymentMethod,
+          installments: 1,
+          installment_number: 1,
+          installment_month: monthKey,
+          is_paid: isPaid,
+          paid_date: isPaid ? paidDate : null,
+        });
+      }
+
+      console.log("Inserindo gastos:", expenseEntries);
 
       const { data, error } = await supabase
         .from("expenses")
-        .insert([expenseData])
+        .insert(expenseEntries)
         .select();
 
       if (error) {
