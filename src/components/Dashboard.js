@@ -168,17 +168,27 @@ export default function Dashboard({ session, onSignOut }) {
   }, [income, filteredExpenses]);
 
   async function loadExpenses() {
-    // Carregar gastos que aparecem neste mês
-    // Inclui: gastos do mês atual + parcelas de crédito que vencem neste mês
+    // Carregar gastos que aparecem neste mês:
+    // 1. Gastos do mês atual
+    // 2. Parcelas de crédito que vencem neste mês
+    // 3. Gastos fixos (aparecem em todos os meses)
     const expRes = await supabase
       .from("expenses")
       .select("*")
       .eq("user_id", userId)
-      .or(`month_key.eq.${monthKey},installment_month.eq.${monthKey}`)
+      .or(`month_key.eq.${monthKey},installment_month.eq.${monthKey},category.eq.fixos`)
       .order("created_at", { ascending: false });
 
     if (expRes.error) setErr(expRes.error.message);
-    else setExpenses(expRes.data || []);
+    else {
+      // Se estamos em um mês diferente de quando o gasto fixo foi criado,
+      // precisamos ajustar o month_key para este mês na visualização
+      const adjustedExpenses = expRes.data?.map((e) => ({
+        ...e,
+        display_month_key: e.category === "fixos" ? monthKey : e.month_key,
+      })) || [];
+      setExpenses(adjustedExpenses);
+    }
   }
 
   async function load() {
@@ -243,22 +253,27 @@ export default function Dashboard({ session, onSignOut }) {
 
     setBusy(true);
     try {
-      // Calcular mês de faturamento baseado no tipo de pagamento
-      let billingMonth = monthKey; // Mês atual por padrão
-
-      if (paymentMethod === "credit") {
-        // Para crédito, o gasto só aparece no mês seguinte
-        const [year, month] = monthKey.split("-");
-        const nextMonth = parseInt(month) + 1;
-        const nextYear = nextMonth > 12 ? parseInt(year) + 1 : year;
-        const nextMonthPad = nextMonth > 12 ? "01" : String(nextMonth).padStart(2, "0");
-        billingMonth = `${nextYear}-${nextMonthPad}`;
-      }
-
-      // Para crédito, criar múltiplos registros (um por parcela)
+      // Para FIXOS, não precisa de controle de pagamento
       const expenseEntries = [];
 
-      if (paymentMethod === "credit") {
+      if (category === "fixos") {
+        // Gasto fixo - simples, aparece todos os meses
+        expenseEntries.push({
+          user_id: userId,
+          month_key: monthKey,
+          category,
+          description: description.trim(),
+          amount_cents: cents,
+          date: new Date().toISOString().slice(0, 10),
+          payment_method: "fixed", // Marca como fixo
+          installments: 1,
+          installment_number: 1,
+          installment_month: monthKey,
+          is_paid: true, // Fixos sempre contam como "pago"
+          paid_date: null,
+        });
+      } else if (paymentMethod === "credit") {
+        // Para crédito, criar múltiplos registros (um por parcela)
         const installmentCount = parseInt(installments);
         const amountPerInstallment = Math.ceil(cents / installmentCount);
 
@@ -270,7 +285,7 @@ export default function Dashboard({ session, onSignOut }) {
 
           expenseEntries.push({
             user_id: userId,
-            month_key: monthKey, // Mês da compra
+            month_key: monthKey,
             category,
             description: `${description.trim()} (${i + 1}/${installmentCount})`,
             amount_cents: i === installmentCount - 1 ? cents - (amountPerInstallment * (installmentCount - 1)) : amountPerInstallment,
@@ -617,67 +632,79 @@ export default function Dashboard({ session, onSignOut }) {
               </div>
             </div>
 
-            {/* Payment Control Section */}
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 space-y-3">
-              <div>
-                <label className="text-xs font-medium text-stone-600 block mb-1">💳 Forma de Pagamento</label>
-                <select
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="w-full border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
-                >
-                  <option value="debit">🏧 Débito</option>
-                  <option value="pix">📱 PIX</option>
-                  <option value="credit">💳 Crédito</option>
-                </select>
-              </div>
-
-              {paymentMethod === "credit" && (
+            {/* Payment Control Section - Only for non-fixed expenses */}
+            {category !== "fixos" && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 space-y-3">
                 <div>
-                  <label className="text-xs font-medium text-stone-600 block mb-1">📊 Parcelas</label>
-                  <div className="grid grid-cols-6 gap-1">
-                    {[1, 2, 3, 4, 6, 12].map((num) => (
-                      <button
-                        key={num}
-                        onClick={() => setInstallments(num)}
-                        className={`px-2 py-1 rounded text-xs font-medium transition ${
-                          installments === num
-                            ? "bg-purple-600 text-white"
-                            : "bg-white border border-stone-300 text-stone-700 hover:bg-stone-100"
-                        }`}
-                      >
-                        {num}x
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="isPaid"
-                  checked={isPaid}
-                  onChange={(e) => setIsPaid(e.target.checked)}
-                  className="w-4 h-4 accent-green-600 cursor-pointer"
-                />
-                <label htmlFor="isPaid" className="text-xs font-medium text-stone-600 cursor-pointer">
-                  ✅ Já foi pago?
-                </label>
-              </div>
-
-              {isPaid && (
-                <div>
-                  <label className="text-xs font-medium text-stone-600 block mb-1">📅 Data do Pagamento</label>
-                  <input
-                    type="date"
-                    value={paidDate}
-                    onChange={(e) => setPaidDate(e.target.value)}
+                  <label className="text-xs font-medium text-stone-600 block mb-1">💳 Forma de Pagamento</label>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
                     className="w-full border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
-                  />
+                  >
+                    <option value="debit">🏧 Débito</option>
+                    <option value="pix">📱 PIX</option>
+                    <option value="credit">💳 Crédito</option>
+                  </select>
                 </div>
-              )}
-            </div>
+
+                {paymentMethod === "credit" && (
+                  <div>
+                    <label className="text-xs font-medium text-stone-600 block mb-1">📊 Parcelas</label>
+                    <div className="grid grid-cols-6 gap-1">
+                      {[1, 2, 3, 4, 6, 12].map((num) => (
+                        <button
+                          key={num}
+                          onClick={() => setInstallments(num)}
+                          className={`px-2 py-1 rounded text-xs font-medium transition ${
+                            installments === num
+                              ? "bg-purple-600 text-white"
+                              : "bg-white border border-stone-300 text-stone-700 hover:bg-stone-100"
+                          }`}
+                        >
+                          {num}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="isPaid"
+                    checked={isPaid}
+                    onChange={(e) => setIsPaid(e.target.checked)}
+                    className="w-4 h-4 accent-green-600 cursor-pointer"
+                  />
+                  <label htmlFor="isPaid" className="text-xs font-medium text-stone-600 cursor-pointer">
+                    ✅ Já foi pago?
+                  </label>
+                </div>
+
+                {isPaid && (
+                  <div>
+                    <label className="text-xs font-medium text-stone-600 block mb-1">📅 Data do Pagamento</label>
+                    <input
+                      type="date"
+                      value={paidDate}
+                      onChange={(e) => setPaidDate(e.target.value)}
+                      className="w-full border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Fixed Expense Info */}
+            {category === "fixos" && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <div className="flex items-center gap-2 text-sm text-green-800">
+                  <span>🔄</span>
+                  <span><strong>Gasto Fixo</strong> - Aparecerá todos os meses automaticamente</span>
+                </div>
+              </div>
+            )}
 
             {amount > 0 && description.trim() && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800 space-y-1">
