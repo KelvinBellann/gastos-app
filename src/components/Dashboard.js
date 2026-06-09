@@ -198,9 +198,9 @@ export default function Dashboard({ session, onSignOut }) {
     setErr("");
     setSuccessMsg("");
 
-    const cents = typeof amount === 'number' ? amount : 0;
+    const cents = Number(amount) || 0;
     if (!description.trim()) return setErr("Descreva o gasto.");
-    if (cents <= 0) return setErr("Valor inválido.");
+    if (!cents || cents <= 0) return setErr("Valor inválido.");
 
     setBusy(true);
     try {
