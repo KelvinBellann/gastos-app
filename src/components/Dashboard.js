@@ -198,9 +198,18 @@ export default function Dashboard({ session, onSignOut }) {
     setErr("");
     setSuccessMsg("");
 
-    const cents = Number(amount) || 0;
-    if (!description.trim()) return setErr("Descreva o gasto.");
-    if (!cents || cents <= 0) return setErr("Valor inválido.");
+    // Validação de descrição
+    if (!description.trim()) {
+      setErr("⚠️ Digite o que foi gasto (ex: Almoço, Gasolina)");
+      return;
+    }
+
+    // Validação de valor
+    const cents = Number(amount);
+    if (isNaN(cents) || cents === 0 || cents < 0) {
+      setErr("⚠️ Digite um valor válido (ex: 50 para R$ 50,00)");
+      return;
+    }
 
     setBusy(true);
     try {
@@ -214,14 +223,18 @@ export default function Dashboard({ session, onSignOut }) {
       });
 
       if (error) {
-        setErr(error.message);
+        setErr(`❌ Erro ao salvar: ${error.message}`);
+        console.error("Supabase error:", error);
       } else {
         setDescription("");
         setAmount("");
-        setSuccessMsg("✓ Gasto adicionado!");
-        setTimeout(() => setSuccessMsg(""), 2000);
+        setSuccessMsg("✅ Gasto adicionado com sucesso!");
+        setTimeout(() => setSuccessMsg(""), 3000);
+        await loadExpenses();
       }
-      await loadExpenses();
+    } catch (err) {
+      setErr(`❌ Erro inesperado: ${err.message}`);
+      console.error("Exception:", err);
     } finally {
       setBusy(false);
     }
@@ -393,12 +406,12 @@ export default function Dashboard({ session, onSignOut }) {
 
         {/* Error & Success */}
         {err && (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm">
+          <div className="bg-red-100 border-2 border-red-500 text-red-800 p-4 rounded-lg text-sm font-semibold shadow-md animate-pulse">
             {err}
           </div>
         )}
         {successMsg && (
-          <div className="bg-green-50 border border-green-200 text-green-700 p-3 rounded-lg text-sm">
+          <div className="bg-green-100 border-2 border-green-500 text-green-800 p-4 rounded-lg text-sm font-semibold shadow-md animate-pulse">
             {successMsg}
           </div>
         )}
@@ -453,44 +466,60 @@ export default function Dashboard({ session, onSignOut }) {
         />
 
         {/* Add Expense Section */}
-        <div className="bg-white rounded-2xl border-t border-stone-200 shadow-lg p-4">
-          <h2 className="text-lg font-bold text-stone-900 mb-3">➕ Novo gasto</h2>
-          <div className="space-y-2">
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full border border-stone-300 rounded-lg p-3 text-sm focus:outline-none focus:border-stone-600"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.icon} {c.label}
-                </option>
-              ))}
-            </select>
-
-            <input
-              placeholder="O que foi gasto?"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full border border-stone-300 rounded-lg p-3 text-sm focus:outline-none focus:border-stone-600"
-            />
-
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <MoneyInput
-                  value={amount}
-                  onChange={setAmount}
-                  placeholder="0,00"
-                />
-              </div>
-              <button
-                onClick={addExpense}
-                disabled={busy}
-                className="bg-[#3D3D3D] text-white px-4 rounded-lg font-bold hover:bg-[#2C2C2C] transition disabled:opacity-60 whitespace-nowrap text-sm"
+        <div className="bg-white rounded-2xl border-2 border-stone-300 shadow-lg p-4">
+          <h2 className="text-lg font-bold text-stone-900 mb-4">➕ Novo gasto</h2>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-stone-600 block mb-1">Categoria</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full border border-stone-300 rounded-lg p-3 text-sm focus:outline-none focus:border-stone-600 focus:ring-2 focus:ring-stone-400"
               >
-                {busy ? "..." : "Salvar"}
-              </button>
+                {CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.icon} {c.label}
+                  </option>
+                ))}
+              </select>
             </div>
+
+            <div>
+              <label className="text-xs font-medium text-stone-600 block mb-1">Descrição</label>
+              <input
+                placeholder="Ex: Almoço, Gasolina, Supermercado..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full border border-stone-300 rounded-lg p-3 text-sm focus:outline-none focus:border-stone-600 focus:ring-2 focus:ring-stone-400"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-stone-600 block mb-1">Valor</label>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <MoneyInput
+                    value={amount}
+                    onChange={setAmount}
+                    placeholder="0,00"
+                  />
+                </div>
+                <button
+                  onClick={addExpense}
+                  disabled={busy || !description.trim() || !amount}
+                  className="bg-[#3D3D3D] text-white px-6 rounded-lg font-bold hover:bg-[#2C2C2C] transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm h-auto"
+                  title={!description.trim() ? "Digite a descrição" : !amount ? "Digite o valor" : "Clique para salvar"}
+                >
+                  {busy ? "Salvando..." : "Salvar"}
+                </button>
+              </div>
+            </div>
+
+            {amount > 0 && description.trim() && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
+                ✅ Pronto para salvar: <strong>{description}</strong> - <strong>{formatBRLFromCents(amount)}</strong>
+              </div>
+            )}
           </div>
 
           {/* Category Totals */}
