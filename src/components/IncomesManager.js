@@ -136,26 +136,34 @@ export default function IncomesManager({ userId, monthKey, income, onUpdate }) {
         </p>
 
         <div className="grid grid-cols-2 gap-2">
-          <MoneyInput
-            label="Seu salário"
-            value={income?.salary_net_cents || 0}
-            onChange={(cents) => onUpdate({ ...income, salary_net_cents: cents })}
-          />
-          <MoneyInput
-            label="Multibenefícios"
-            value={income?.multibenefits_cents || 0}
-            onChange={(cents) => onUpdate({ ...income, multibenefits_cents: cents })}
-          />
-          <MoneyInput
-            label="Alimentação"
-            value={income?.food_cents || 0}
-            onChange={(cents) => onUpdate({ ...income, food_cents: cents })}
-          />
-          <MoneyInput
-            label="Salário esposa"
-            value={income?.spouse_salary_cents || 0}
-            onChange={(cents) => onUpdate({ ...income, spouse_salary_cents: cents })}
-          />
+          {income ? (
+            <>
+              <MoneyInput
+                label="Seu salário"
+                value={income.salary_net_cents || 0}
+                onChange={(cents) => onUpdate({ ...income, salary_net_cents: cents })}
+              />
+              <MoneyInput
+                label="Multibenefícios"
+                value={income.multibenefits_cents || 0}
+                onChange={(cents) => onUpdate({ ...income, multibenefits_cents: cents })}
+              />
+              <MoneyInput
+                label="Alimentação"
+                value={income.food_cents || 0}
+                onChange={(cents) => onUpdate({ ...income, food_cents: cents })}
+              />
+              <MoneyInput
+                label="Salário esposa"
+                value={income.spouse_salary_cents || 0}
+                onChange={(cents) => onUpdate({ ...income, spouse_salary_cents: cents })}
+              />
+            </>
+          ) : (
+            <div className="col-span-4 text-center py-4 text-stone-500">
+              Carregando dados de receitas...
+            </div>
+          )}
         </div>
 
         <div className="mt-3 p-2 bg-stone-50 rounded-lg border border-stone-200">
