@@ -94,6 +94,7 @@ export default function Dashboard({ session, onSignOut }) {
   const [successMsg, setSuccessMsg] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editAmount, setEditAmount] = useState("");
+  const [expandedGroups, setExpandedGroups] = useState(new Set());
 
   const filteredExpenses = useMemo(() => {
     if (filter === "todos") return expenses;
@@ -126,12 +127,14 @@ export default function Dashboard({ session, onSignOut }) {
         // Primeiro gasto dessa descrição nesse dia
         grouped[period][key] = {
           ...e,
-          count: 1, // Quantas vezes foi adicionado
+          count: 1,
+          items: [e], // Manter referência aos itens originais
         };
       } else {
-        // Gasto duplicado - somar valor e incrementar contador
+        // Gasto duplicado - somar valor, incrementar contador e adicionar ao array
         grouped[period][key].amount_cents += e.amount_cents;
         grouped[period][key].count += 1;
+        grouped[period][key].items.push(e);
       }
     });
 
@@ -594,55 +597,52 @@ export default function Dashboard({ session, onSignOut }) {
                       icon: "❓",
                       color: ""
                     };
+                    const groupKey = `${e.description}|${e.category}|${e.date}`;
+                    const isExpanded = expandedGroups.has(groupKey);
+                    const hasMultiple = e.count > 1;
+
                     return (
-                      <div
-                        key={e.id}
-                        className="bg-white border border-stone-100 rounded-xl p-3 flex items-center justify-between hover:bg-stone-50 transition text-sm"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-stone-900 flex items-center gap-2">
-                            <span>{catInfo.icon}</span>
-                            <span className="truncate">{e.description}</span>
-                            {e.count > 1 && (
-                              <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
-                                ×{e.count}
-                              </span>
-                            )}
+                      <div key={e.id}>
+                        {/* ITEM AGRUPADO OU ÚNICO */}
+                        <div
+                          className="bg-white border border-stone-100 rounded-xl p-3 flex items-center justify-between hover:bg-stone-50 transition text-sm"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-stone-900 flex items-center gap-2">
+                              <span>{catInfo.icon}</span>
+                              <span className="truncate">{e.description}</span>
+                              {hasMultiple && (
+                                <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
+                                  ×{e.count}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-stone-500 mt-1">
+                              {formatDatePT(e.date)}
+                            </div>
                           </div>
-                          <div className="text-xs text-stone-500 mt-1">
-                            {formatDatePT(e.date)}
-                          </div>
-                        </div>
-                        {editingId === e.id ? (
-                          <div className="flex gap-1 ml-2">
-                            <input
-                              type="text"
-                              value={editAmount}
-                              onChange={(e) => setEditAmount(e.target.value)}
-                              inputMode="decimal"
-                              className="w-20 border border-stone-300 rounded p-1 text-xs focus:outline-none focus:border-stone-600"
-                            />
-                            <button
-                              onClick={() => saveEdit(e.id)}
-                              disabled={busy}
-                              className="bg-[#4A7C59] text-white px-2 py-1 rounded text-xs font-medium hover:bg-[#3D6A4A] transition"
-                            >
-                              ✓
-                            </button>
-                            <button
-                              onClick={cancelEdit}
-                              disabled={busy}
-                              className="bg-stone-400 text-white px-2 py-1 rounded text-xs font-medium hover:bg-stone-500 transition"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ) : (
                           <div className="flex items-center gap-1 ml-2">
                             <div className="font-semibold text-stone-900 min-w-max">
                               {formatBRLFromCents(e.amount_cents)}
                             </div>
                             <div className="flex gap-1">
+                              {hasMultiple && (
+                                <button
+                                  onClick={() => {
+                                    const newSet = new Set(expandedGroups);
+                                    if (newSet.has(groupKey)) {
+                                      newSet.delete(groupKey);
+                                    } else {
+                                      newSet.add(groupKey);
+                                    }
+                                    setExpandedGroups(newSet);
+                                  }}
+                                  className="text-stone-400 hover:text-blue-600 font-bold text-lg transition"
+                                  title={isExpanded ? "Recolher" : "Expandir"}
+                                >
+                                  {isExpanded ? "▼" : "▶"}
+                                </button>
+                              )}
                               <button
                                 onClick={() => startEdit(e)}
                                 disabled={busy || editingId}
@@ -660,6 +660,69 @@ export default function Dashboard({ session, onSignOut }) {
                                 ✕
                               </button>
                             </div>
+                          </div>
+                        </div>
+
+                        {/* ITENS EXPANDIDOS */}
+                        {hasMultiple && isExpanded && (
+                          <div className="ml-4 mt-2 space-y-2 border-l-2 border-blue-200 pl-3">
+                            {e.items.map((item) => (
+                              <div
+                                key={item.id}
+                                className="bg-blue-50 border border-blue-100 rounded-lg p-2 flex items-center justify-between text-sm"
+                              >
+                                <div className="flex-1">
+                                  <div className="text-blue-900 font-medium">
+                                    {formatBRLFromCents(item.amount_cents)}
+                                  </div>
+                                </div>
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => startEdit(item)}
+                                    disabled={busy || editingId}
+                                    className="text-blue-400 hover:text-blue-700 font-bold transition disabled:opacity-50"
+                                    title="Editar"
+                                  >
+                                    ✎
+                                  </button>
+                                  <button
+                                    onClick={() => deleteExpense(item.id)}
+                                    disabled={busy || editingId}
+                                    className="text-blue-400 hover:text-red-500 font-bold transition disabled:opacity-50"
+                                    title="Deletar"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* MODO EDIÇÃO - ITEM INDIVIDUAL */}
+                        {editingId === e.id && (
+                          <div className="ml-4 mt-2 bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={editAmount}
+                              onChange={(e) => setEditAmount(e.target.value)}
+                              inputMode="decimal"
+                              className="flex-1 border border-yellow-300 rounded p-1 text-xs focus:outline-none focus:border-yellow-600"
+                            />
+                            <button
+                              onClick={() => saveEdit(e.id)}
+                              disabled={busy}
+                              className="bg-[#4A7C59] text-white px-2 py-1 rounded text-xs font-medium hover:bg-[#3D6A4A] transition"
+                            >
+                              ✓
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              disabled={busy}
+                              className="bg-stone-400 text-white px-2 py-1 rounded text-xs font-medium hover:bg-stone-500 transition"
+                            >
+                              ✕
+                            </button>
                           </div>
                         )}
                       </div>
