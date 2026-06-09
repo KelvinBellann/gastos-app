@@ -95,6 +95,10 @@ export default function Dashboard({ session, onSignOut }) {
   const [editingId, setEditingId] = useState(null);
   const [editAmount, setEditAmount] = useState("");
   const [expandedGroups, setExpandedGroups] = useState(new Set());
+  const [paymentMethod, setPaymentMethod] = useState("debit");
+  const [installments, setInstallments] = useState(1);
+  const [isPaid, setIsPaid] = useState(false);
+  const [paidDate, setPaidDate] = useState(new Date().toISOString().slice(0, 10));
 
   const filteredExpenses = useMemo(() => {
     if (filter === "todos") return expenses;
@@ -244,6 +248,10 @@ export default function Dashboard({ session, onSignOut }) {
         description: description.trim(),
         amount_cents: cents,
         date: new Date().toISOString().slice(0, 10),
+        payment_method: paymentMethod,
+        installments: parseInt(installments),
+        is_paid: isPaid,
+        paid_date: isPaid ? paidDate : null,
       };
 
       console.log("Inserindo gasto:", expenseData);
@@ -267,6 +275,10 @@ export default function Dashboard({ session, onSignOut }) {
         console.log("Gasto salvo com sucesso:", data);
         setDescription("");
         setAmount("");
+        setPaymentMethod("debit");
+        setInstallments(1);
+        setIsPaid(false);
+        setPaidDate(new Date().toISOString().slice(0, 10));
         setSuccessMsg("✅ Gasto adicionado com sucesso!");
         setTimeout(() => setSuccessMsg(""), 3000);
         await loadExpenses();
@@ -558,9 +570,80 @@ export default function Dashboard({ session, onSignOut }) {
               </div>
             </div>
 
+            {/* Payment Control Section */}
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 space-y-3">
+              <div>
+                <label className="text-xs font-medium text-stone-600 block mb-1">💳 Forma de Pagamento</label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  className="w-full border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
+                >
+                  <option value="debit">🏧 Débito</option>
+                  <option value="pix">📱 PIX</option>
+                  <option value="credit">💳 Crédito</option>
+                </select>
+              </div>
+
+              {paymentMethod === "credit" && (
+                <div>
+                  <label className="text-xs font-medium text-stone-600 block mb-1">📊 Parcelas</label>
+                  <div className="grid grid-cols-6 gap-1">
+                    {[1, 2, 3, 4, 6, 12].map((num) => (
+                      <button
+                        key={num}
+                        onClick={() => setInstallments(num)}
+                        className={`px-2 py-1 rounded text-xs font-medium transition ${
+                          installments === num
+                            ? "bg-purple-600 text-white"
+                            : "bg-white border border-stone-300 text-stone-700 hover:bg-stone-100"
+                        }`}
+                      >
+                        {num}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="isPaid"
+                  checked={isPaid}
+                  onChange={(e) => setIsPaid(e.target.checked)}
+                  className="w-4 h-4 accent-green-600 cursor-pointer"
+                />
+                <label htmlFor="isPaid" className="text-xs font-medium text-stone-600 cursor-pointer">
+                  ✅ Já foi pago?
+                </label>
+              </div>
+
+              {isPaid && (
+                <div>
+                  <label className="text-xs font-medium text-stone-600 block mb-1">📅 Data do Pagamento</label>
+                  <input
+                    type="date"
+                    value={paidDate}
+                    onChange={(e) => setPaidDate(e.target.value)}
+                    className="w-full border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
+                  />
+                </div>
+              )}
+            </div>
+
             {amount > 0 && description.trim() && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
-                ✅ Pronto para salvar: <strong>{description}</strong> - <strong>{formatBRLFromCents(amount)}</strong>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800 space-y-1">
+                <div>✅ Pronto para salvar: <strong>{description}</strong> - <strong>{formatBRLFromCents(amount)}</strong></div>
+                <div className="text-xs">
+                  {paymentMethod === "credit" ? (
+                    <span>💳 Crédito em {installments}x de {formatBRLFromCents(Math.ceil(amount / installments))}</span>
+                  ) : paymentMethod === "pix" ? (
+                    <span>📱 PIX {isPaid ? "✓ Pago" : "⏳ Pendente"}</span>
+                  ) : (
+                    <span>🏧 Débito {isPaid ? "✓ Pago" : "⏳ Pendente"}</span>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -619,6 +702,20 @@ export default function Dashboard({ session, onSignOut }) {
                             </div>
                             <div className="text-xs text-stone-500 mt-1">
                               {formatDatePT(e.date)}
+                            </div>
+                            <div className="text-xs text-stone-600 mt-1 flex gap-2 flex-wrap">
+                              <span>
+                                {e.payment_method === "credit"
+                                  ? `💳 Crédito (${e.installments}x)`
+                                  : e.payment_method === "pix"
+                                  ? "📱 PIX"
+                                  : "🏧 Débito"}
+                              </span>
+                              <span>
+                                {e.is_paid
+                                  ? `✅ Pago em ${formatDatePT(e.paid_date)}`
+                                  : "⏳ Pendente"}
+                              </span>
                             </div>
                           </div>
                           <div className="flex items-center gap-1 ml-2">
