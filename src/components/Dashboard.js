@@ -113,12 +113,33 @@ export default function Dashboard({ session, onSignOut }) {
   const groupedExpenses = useMemo(() => {
     const PERIODS = ["Hoje", "Ontem", "Esta semana", "Mês anterior"];
     const grouped = {};
+
+    // Agrupar por período e depois combinar gastos iguais
     filteredExpenses.forEach((e) => {
       const period = getPeriodLabel(e.date);
-      if (!grouped[period]) grouped[period] = [];
-      grouped[period].push(e);
+      if (!grouped[period]) grouped[period] = {};
+
+      // Chave única: descrição + categoria + data (para combinar duplicatas)
+      const key = `${e.description}|${e.category}|${e.date}`;
+
+      if (!grouped[period][key]) {
+        // Primeiro gasto dessa descrição nesse dia
+        grouped[period][key] = {
+          ...e,
+          count: 1, // Quantas vezes foi adicionado
+        };
+      } else {
+        // Gasto duplicado - somar valor e incrementar contador
+        grouped[period][key].amount_cents += e.amount_cents;
+        grouped[period][key].count += 1;
+      }
     });
-    return PERIODS.filter((p) => grouped[p]).map((p) => ({ period: p, items: grouped[p] }));
+
+    // Converter de volta para array
+    return PERIODS.filter((p) => grouped[p] && Object.keys(grouped[p]).length > 0).map((p) => ({
+      period: p,
+      items: Object.values(grouped[p]),
+    }));
   }, [filteredExpenses]);
 
   const totals = useMemo(() => {
@@ -579,9 +600,14 @@ export default function Dashboard({ session, onSignOut }) {
                         className="bg-white border border-stone-100 rounded-xl p-3 flex items-center justify-between hover:bg-stone-50 transition text-sm"
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-stone-900 flex items-center gap-1">
+                          <div className="font-semibold text-stone-900 flex items-center gap-2">
                             <span>{catInfo.icon}</span>
                             <span className="truncate">{e.description}</span>
+                            {e.count > 1 && (
+                              <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
+                                ×{e.count}
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-stone-500 mt-1">
                             {formatDatePT(e.date)}
