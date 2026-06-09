@@ -8,21 +8,21 @@
 CREATE TABLE IF NOT EXISTS incomes (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  month_key TEXT NOT NULL, -- Formato: "2024-01"
+  "month_key" TEXT NOT NULL, -- Formato: "2024-01"
   salary_net_cents BIGINT DEFAULT 0, -- Salário em centavos
   multibenefits_cents BIGINT DEFAULT 0, -- Multibenefícios em centavos
   food_cents BIGINT DEFAULT 0, -- Vale alimentação em centavos
   spouse_salary_cents BIGINT DEFAULT 0, -- Salário esposa em centavos
   created_at TIMESTAMP DEFAULT now(),
   updated_at TIMESTAMP DEFAULT now(),
-  UNIQUE(user_id, month_key)
+  UNIQUE(user_id, "month_key")
 );
 
 -- 2. CRIAR TABELA DE GASTOS
 CREATE TABLE IF NOT EXISTS expenses (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  month_key TEXT NOT NULL, -- Formato: "2024-01"
+  "month_key" TEXT NOT NULL, -- Formato: "2024-01"
   category TEXT NOT NULL, -- fixos, mercado, aleatorios, etc
   description TEXT NOT NULL, -- O que foi gasto
   amount_cents BIGINT NOT NULL, -- Valor em centavos
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS expenses (
 CREATE TABLE IF NOT EXISTS variable_incomes (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  month_key TEXT NOT NULL, -- Formato: "2024-01"
+  "month_key" TEXT NOT NULL, -- Formato: "2024-01"
   description TEXT NOT NULL, -- Ex: Bônus, Freelance
   amount_cents BIGINT NOT NULL, -- Valor em centavos
   date_from DATE NOT NULL, -- Data inicial
@@ -49,16 +49,16 @@ CREATE TABLE IF NOT EXISTS variable_incomes (
 -- ===================================
 
 CREATE INDEX IF NOT EXISTS incomes_user_id_month_key
-  ON incomes(user_id, month_key);
+  ON incomes(user_id, "month_key");
 
 CREATE INDEX IF NOT EXISTS expenses_user_id_month_key
-  ON expenses(user_id, month_key);
+  ON expenses(user_id, "month_key");
 
 CREATE INDEX IF NOT EXISTS expenses_user_id_date
   ON expenses(user_id, date);
 
 CREATE INDEX IF NOT EXISTS variable_incomes_user_id_month_key
-  ON variable_incomes(user_id, month_key);
+  ON variable_incomes(user_id, "month_key");
 
 -- ===================================
 -- ATIVAR ROW LEVEL SECURITY (RLS)
