@@ -213,19 +213,34 @@ export default function Dashboard({ session, onSignOut }) {
 
     setBusy(true);
     try {
-      const { error } = await supabase.from("expenses").insert({
+      const expenseData = {
         user_id: userId,
         month_key: monthKey,
         category,
         description: description.trim(),
         amount_cents: cents,
         date: new Date().toISOString().slice(0, 10),
-      });
+      };
+
+      console.log("Inserindo gasto:", expenseData);
+
+      const { data, error } = await supabase
+        .from("expenses")
+        .insert([expenseData])
+        .select();
 
       if (error) {
-        setErr(`❌ Erro ao salvar: ${error.message}`);
-        console.error("Supabase error:", error);
+        const errorMsg = error.message || JSON.stringify(error);
+        setErr(`❌ Erro ao salvar: ${errorMsg}`);
+        console.error("Supabase error details:", {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+          fullError: error,
+        });
       } else {
+        console.log("Gasto salvo com sucesso:", data);
         setDescription("");
         setAmount("");
         setSuccessMsg("✅ Gasto adicionado com sucesso!");
@@ -234,7 +249,11 @@ export default function Dashboard({ session, onSignOut }) {
       }
     } catch (err) {
       setErr(`❌ Erro inesperado: ${err.message}`);
-      console.error("Exception:", err);
+      console.error("Exception details:", {
+        message: err.message,
+        stack: err.stack,
+        fullError: err,
+      });
     } finally {
       setBusy(false);
     }
