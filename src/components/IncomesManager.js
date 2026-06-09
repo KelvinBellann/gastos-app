@@ -46,7 +46,12 @@ export default function IncomesManager({ userId, monthKey, income, onUpdate }) {
       return;
     }
 
-    if (!newVariable.amount || newVariable.amount <= 0) {
+    if (newVariable.amount < 0 || !Number.isInteger(newVariable.amount)) {
+      setError("Valor inválido");
+      return;
+    }
+
+    if (newVariable.amount === 0) {
       setError("Valor deve ser maior que zero");
       return;
     }
@@ -131,89 +136,26 @@ export default function IncomesManager({ userId, monthKey, income, onUpdate }) {
         </p>
 
         <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="text-xs font-medium text-stone-700 mb-1 block">
-              Seu salário
-            </label>
-            <input
-              type="text"
-              value={
-                income?.salary_net_cents
-                  ? formatBRLFromCents(income.salary_net_cents)
-                  : ""
-              }
-              onChange={(e) => {
-                const onlyNumbers = e.target.value.replace(/\D/g, "");
-                const cents = parseInt(onlyNumbers) || 0;
-                onUpdate({ ...income, salary_net_cents: cents });
-              }}
-              placeholder="R$ 0,00"
-              className="w-full border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-stone-700 mb-1 block">
-              Multibenefícios
-            </label>
-            <input
-              type="text"
-              value={
-                income?.multibenefits_cents
-                  ? formatBRLFromCents(income.multibenefits_cents)
-                  : ""
-              }
-              onChange={(e) => {
-                const onlyNumbers = e.target.value.replace(/\D/g, "");
-                const cents = parseInt(onlyNumbers) || 0;
-                onUpdate({ ...income, multibenefits_cents: cents });
-              }}
-              placeholder="R$ 0,00"
-              className="w-full border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-stone-700 mb-1 block">
-              Alimentação
-            </label>
-            <input
-              type="text"
-              value={
-                income?.food_cents
-                  ? formatBRLFromCents(income.food_cents)
-                  : ""
-              }
-              onChange={(e) => {
-                const onlyNumbers = e.target.value.replace(/\D/g, "");
-                const cents = parseInt(onlyNumbers) || 0;
-                onUpdate({ ...income, food_cents: cents });
-              }}
-              placeholder="R$ 0,00"
-              className="w-full border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-stone-700 mb-1 block">
-              Salário esposa
-            </label>
-            <input
-              type="text"
-              value={
-                income?.spouse_salary_cents
-                  ? formatBRLFromCents(income.spouse_salary_cents)
-                  : ""
-              }
-              onChange={(e) => {
-                const onlyNumbers = e.target.value.replace(/\D/g, "");
-                const cents = parseInt(onlyNumbers) || 0;
-                onUpdate({ ...income, spouse_salary_cents: cents });
-              }}
-              placeholder="R$ 0,00"
-              className="w-full border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
-            />
-          </div>
+          <MoneyInput
+            label="Seu salário"
+            value={income?.salary_net_cents || 0}
+            onChange={(cents) => onUpdate({ ...income, salary_net_cents: cents })}
+          />
+          <MoneyInput
+            label="Multibenefícios"
+            value={income?.multibenefits_cents || 0}
+            onChange={(cents) => onUpdate({ ...income, multibenefits_cents: cents })}
+          />
+          <MoneyInput
+            label="Alimentação"
+            value={income?.food_cents || 0}
+            onChange={(cents) => onUpdate({ ...income, food_cents: cents })}
+          />
+          <MoneyInput
+            label="Salário esposa"
+            value={income?.spouse_salary_cents || 0}
+            onChange={(cents) => onUpdate({ ...income, spouse_salary_cents: cents })}
+          />
         </div>
 
         <div className="mt-3 p-2 bg-stone-50 rounded-lg border border-stone-200">
@@ -287,24 +229,19 @@ export default function IncomesManager({ userId, monthKey, income, onUpdate }) {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-stone-600">
+                <label className="text-xs font-medium text-stone-600 block mb-1">
                   Valor
                 </label>
-                <input
-                  type="text"
-                  placeholder="0,00"
-                  value={
-                    newVariable.amount > 0
-                      ? (newVariable.amount / 100).toFixed(2)
-                      : ""
-                  }
-                  onChange={(e) => {
-                    const onlyNumbers = e.target.value.replace(/\D/g, "");
-                    const cents = parseInt(onlyNumbers) || 0;
-                    setNewVariable({ ...newVariable, amount: cents });
-                  }}
-                  className="w-full border border-stone-300 rounded p-1 text-xs"
-                />
+                <div className="flex-1">
+                  <MoneyInput
+                    value={newVariable.amount || 0}
+                    onChange={(cents) =>
+                      setNewVariable({ ...newVariable, amount: cents })
+                    }
+                    placeholder="0,00"
+                    className="text-xs"
+                  />
+                </div>
               </div>
             </div>
 

@@ -282,32 +282,34 @@ export default function Dashboard({ session, onSignOut }) {
       setErr("Carregando dados de receitas...");
       return;
     }
-    if (typeof cents !== 'number' || cents < 0) {
+    const numCents = Number(cents);
+    if (!Number.isInteger(numCents) || numCents < 0) {
       setErr("Valor inválido");
       return;
     }
 
     setErr("");
-    const next = { ...income, [field]: cents };
-    setIncome(next);
+    const incomeId = income.id;
+    const previousValue = income[field];
+
+    setIncome(prev => ({ ...prev, [field]: numCents }));
 
     try {
       const { error } = await supabase
         .from("incomes")
-        .update({ [field]: cents })
-        .eq("id", income.id);
+        .update({ [field]: numCents })
+        .eq("id", incomeId);
 
       if (error) {
         setErr(`Erro ao salvar: ${error.message}`);
-        // Revert local change on error
-        setIncome(income);
+        setIncome(prev => ({ ...prev, [field]: previousValue }));
       } else {
         setSuccessMsg("✓ Receita atualizada!");
         setTimeout(() => setSuccessMsg(""), 2000);
       }
     } catch (err) {
       setErr(`Erro ao salvar: ${err.message}`);
-      setIncome(income);
+      setIncome(prev => ({ ...prev, [field]: previousValue }));
     }
   }
 
@@ -431,20 +433,21 @@ export default function Dashboard({ session, onSignOut }) {
           monthKey={monthKey}
           income={income}
           onUpdate={(updated) => {
-            setIncome(updated);
-            // Save to database
-            Object.keys(updated).forEach((key) => {
-              if (
-                [
-                  "salary_net_cents",
-                  "multibenefits_cents",
-                  "food_cents",
-                  "spouse_salary_cents",
-                ].includes(key) &&
-                updated[key] !== income[key]
-              ) {
-                updateIncomeField(key, updated[key]);
-              }
+            setIncome(prev => {
+              Object.keys(updated).forEach((key) => {
+                if (
+                  [
+                    "salary_net_cents",
+                    "multibenefits_cents",
+                    "food_cents",
+                    "spouse_salary_cents",
+                  ].includes(key) &&
+                  updated[key] !== prev[key]
+                ) {
+                  updateIncomeField(key, updated[key]);
+                }
+              });
+              return updated;
             });
           }}
         />
