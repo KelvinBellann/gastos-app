@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Controle de Gastos
 
-## Getting Started
+App pessoal de controle de receitas e despesas por mes, com leitura de notas fiscais por OCR e comparacao de precos entre lojas.
 
-First, run the development server:
+Stack: Next.js 16 (App Router, React Compiler), React 19, Supabase (auth + Postgres com RLS), Tailwind 4, tesseract.js 7, Jest 29.
+
+## Pre-requisitos
+
+- Node 24 e npm 11 (versoes usadas na validacao de 2026-09-28)
+- Projeto no Supabase com autenticacao por email/senha habilitada
+
+## Configuracao
+
+1. Instalar dependencias:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Criar `.env.local` na raiz (o arquivo e ignorado pelo git):
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+```
+NEXT_PUBLIC_SUPABASE_URL=https://<projeto>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. Criar o schema no SQL Editor do Supabase, nesta ordem:
 
-## Learn More
+| Ordem | Arquivo | O que cria |
+|---|---|---|
+| 1 | `SUPABASE_SETUP.sql` | tabelas `incomes`, `expenses`, `variable_incomes`, indices, RLS, trigger de `updated_at` |
+| 2 | `PAYMENT_CONTROL_MIGRATION.sql` | colunas `payment_method`, `installments`, `is_paid`, `paid_date`, `notes` em `expenses` |
+| 3 | `INSTALLMENT_MONTH_MIGRATION.sql` | colunas `installment_month` e `installment_number` em `expenses` |
+| 4 | `supabase/migrations/001_create_receipts_tables.sql` | tabelas `receipts`, `receipt_items`, `store_products` (aba Recibos e Comparar) |
 
-To learn more about Next.js, take a look at the following resources:
+Observacoes:
+- `ADD_PAYMENT_COLUMNS.sql` e um subconjunto do passo 2 (sem a coluna `notes`). Nao precisa rodar se o passo 2 foi executado.
+- `supabase/migrations/002_create_incomes_table.sql` e `003_create_variable_incomes_table.sql` recriam tabelas que o passo 1 ja cria, com tipos diferentes (INTEGER em vez de BIGINT). Nao rodar depois do passo 1.
+- `SUPABASE_SETUP.sql` nao e idempotente (`CREATE POLICY` e `CREATE TRIGGER` sem guarda). Rodar uma unica vez.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Comandos
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run dev      # servidor de desenvolvimento em http://localhost:3000
+npm run build    # build de producao (roda o React Compiler)
+npm run start    # serve o build
+npm run lint     # eslint (eslint-config-next, regras do React Compiler)
+npm test         # jest
+npm run test:watch
+```
 
-## Deploy on Vercel
+## Estrutura
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `src/app/page.js`: verifica a sessao e alterna entre `LoginPage` e `Dashboard`
+- `src/components/Dashboard.js`: mes, receitas, novo gasto, lista agrupada, abas Recibos e Comparar
+- `src/components/IncomesManager.js`: receitas fixas e variaveis
+- `src/components/ReceiptsTab.js` e `ReceiptUpload.js`: recibos e OCR
+- `src/components/StoreComparison.js`: comparacao de precos por produto entre lojas
+- `src/lib/receiptOCR.js` e `receiptParser.js`: extracao e parse do texto da nota
+- `src/lib/supabaseClient.js`: cliente Supabase
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Guias de uso: `EXPENSE_INPUT_GUIDE.md`, `PAYMENT_CONTROL_GUIDE.md`, `INSTALLMENT_GUIDE.md`. Testes: `TESTING.md`.
