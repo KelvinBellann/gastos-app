@@ -1,3 +1,5 @@
+import { todayISO, isValidISODate } from "@/lib/dates";
+
 const KNOWN_STORES = [
   "carrefour",
   "pão de açúcar",
@@ -20,17 +22,20 @@ const KNOWN_STORES = [
   "a.c",
 ];
 
-function normalizeText(text) {
-  return text.toLowerCase().trim();
-}
+// Casamento por palavra inteira: com includes, "dia" batia em "media" e "app" em "apple"
+const STORE_PATTERNS = KNOWN_STORES.map(
+  (store) => new RegExp(`(^|[^\\p{L}])${store.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^\\p{L}])`, "iu")
+);
+
+// Linhas de rodape do cupom que tem preco mas nao sao produto
+const NON_ITEM_LINE = /\b(sub\s*total|total|troco|dinheiro|cart[aã]o|d[eé]bito|cr[eé]dito|pix|cnpj|cpf|desconto|valor\s+pago|recebido|tributos?|imposto)\b/i;
 
 function extractStoreName(text) {
   const lines = text.split("\n").slice(0, 10);
 
   for (const line of lines) {
-    const normalized = normalizeText(line);
-    for (const store of KNOWN_STORES) {
-      if (normalized.includes(store)) {
+    for (const pattern of STORE_PATTERNS) {
+      if (pattern.test(line)) {
         return line.trim();
       }
     }
@@ -48,10 +53,12 @@ function extractDate(text) {
     if (year.length === 2) {
       year = "20" + year;
     }
-    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    const iso = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    // OCR pode ler 31/02 ou 15/13; data invalida quebrava o insert na coluna DATE
+    if (isValidISODate(iso)) return iso;
   }
 
-  return new Date().toISOString().split("T")[0];
+  return todayISO();
 }
 
 function extractItems(text) {
@@ -59,13 +66,13 @@ function extractItems(text) {
   const items = [];
 
   const pricePattern = /R?\$?\s*(\d+[.,]\d{2})/g;
-  const lineWithPricePattern = /^(.+?)\s+(?:x\s*(\d+(?:[.,]\d+)?)\s+)?.*?(\d+[.,]\d{2})?\s*$/;
 
   let lineNum = 0;
   for (const line of lines) {
     const trimmed = line.trim();
 
     if (trimmed.length < 2) continue;
+    if (NON_ITEM_LINE.test(trimmed)) continue;
 
     const prices = [...trimmed.matchAll(pricePattern)];
 
@@ -116,8 +123,11 @@ export function parseReceipt(ocrText) {
 }
 
 export function normalizeProductName(name) {
+  // A unidade so e removida quando termina a palavra: sem o lookahead, "2 leite"
+  // casava "2 l" e virava "eite". Alternativas maiores primeiro (unid antes de un, kg antes de g).
   return name
     .toLowerCase()
-    .replace(/\d+\s*(?:l|kg|g|ml|un|un\.|unid)/gi, "")
+    .replace(/\b\d+(?:[.,]\d+)?\s*(?:unid|un|kg|ml|g|l)\.?(?=\s|$)/gi, "")
+    .replace(/\s{2,}/g, " ")
     .trim();
 }
