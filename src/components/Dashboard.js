@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { todayISO, parseISODate, formatDatePT } from "@/lib/dates";
 import ReceiptsTab from "./ReceiptsTab";
 import StoreComparison from "./StoreComparison";
 import MoneyInput from "./MoneyInput";
@@ -25,24 +26,28 @@ function formatBRLFromCents(cents) {
 }
 
 function parseBRLToCents(input) {
-  const clean = String(input).replace(/[^\d,.-]/g, "").replace(".", "").replace(",", ".");
+  // Todos os pontos de milhar saem (1.234.567,89); replace com string so tirava o primeiro
+  const clean = String(input).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
   const num = Number(clean);
   if (Number.isNaN(num)) return null;
   return Math.round(num * 100);
 }
 
-function formatDatePT(dateStr) {
-  if (!dateStr) return "";
-  const [y, m, d] = dateStr.split("-");
-  return new Date(y, m - 1, d).toLocaleDateString("pt-BR");
-}
-
 function getDaysSinceToday(dateStr) {
-  const date = new Date(dateStr);
+  const date = parseISODate(dateStr);
+  if (!date) return Infinity;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  date.setHours(0, 0, 0, 0);
-  return Math.floor((today - date) / (1000 * 60 * 60 * 24));
+  // round, nao floor: a diferenca nao e multiplo exato de 24h nos dias de troca de horario de verao
+  return Math.round((today - date) / (1000 * 60 * 60 * 24));
+}
+
+function splitInstallments(totalCents, count) {
+  // floor com o resto nas primeiras parcelas: com ceil a ultima parcela ficava negativa
+  // em valores pequenos (1 centavo em 12x dava -10 na ultima)
+  const base = Math.floor(totalCents / count);
+  const remainder = totalCents - base * count;
+  return Array.from({ length: count }, (_, i) => base + (i < remainder ? 1 : 0));
 }
 
 function getPeriodLabel(dateStr) {
@@ -94,7 +99,8 @@ export default function Dashboard({ session, onSignOut }) {
   const [paymentMethod, setPaymentMethod] = useState("debit");
   const [installments, setInstallments] = useState(1);
   const [isPaid, setIsPaid] = useState(false);
-  const [paidDate, setPaidDate] = useState(new Date().toISOString().slice(0, 10));
+  const [paidDate, setPaidDate] = useState(todayISO());
+  const [variableIncomeTotal, setVariableIncomeTotal] = useState(0);
 
   const filteredExpenses = useMemo(() => {
     if (filter === "todos") return expenses;
@@ -146,11 +152,13 @@ export default function Dashboard({ session, onSignOut }) {
   }, [filteredExpenses]);
 
   const totals = useMemo(() => {
+    // Inclui as variaveis: o card Saldo e o "Total de Receitas" do IncomesManager divergiam
     const incomeTotal =
       (income?.salary_net_cents || 0) +
       (income?.multibenefits_cents || 0) +
       (income?.food_cents || 0) +
-      (income?.spouse_salary_cents || 0);
+      (income?.spouse_salary_cents || 0) +
+      variableIncomeTotal;
 
     const byCategory = filteredExpenses.reduce((acc, e) => {
       acc[e.category] = (acc[e.category] || 0) + e.amount_cents;
@@ -161,7 +169,7 @@ export default function Dashboard({ session, onSignOut }) {
     const balance = incomeTotal - expensesTotal;
 
     return { incomeTotal, expensesTotal, balance, byCategory };
-  }, [income, filteredExpenses]);
+  }, [income, variableIncomeTotal, filteredExpenses]);
 
   async function loadExpenses() {
     // Carregar gastos que aparecem neste mês:
@@ -259,7 +267,7 @@ export default function Dashboard({ session, onSignOut }) {
           category,
           description: description.trim(),
           amount_cents: cents,
-          date: new Date().toISOString().slice(0, 10),
+          date: todayISO(),
           payment_method: "fixed", // Marca como fixo
           installments: 1,
           installment_number: 1,
@@ -270,7 +278,7 @@ export default function Dashboard({ session, onSignOut }) {
       } else if (paymentMethod === "credit") {
         // Para crédito, criar múltiplos registros (um por parcela)
         const installmentCount = parseInt(installments);
-        const amountPerInstallment = Math.ceil(cents / installmentCount);
+        const installmentAmounts = splitInstallments(cents, installmentCount);
 
         for (let i = 0; i < installmentCount; i++) {
           const [year, month] = monthKey.split("-");
@@ -283,8 +291,8 @@ export default function Dashboard({ session, onSignOut }) {
             month_key: monthKey,
             category,
             description: `${description.trim()} (${i + 1}/${installmentCount})`,
-            amount_cents: i === installmentCount - 1 ? cents - (amountPerInstallment * (installmentCount - 1)) : amountPerInstallment,
-            date: new Date().toISOString().slice(0, 10),
+            amount_cents: installmentAmounts[i],
+            date: todayISO(),
             payment_method: paymentMethod,
             installments: installmentCount,
             installment_number: i + 1,
@@ -301,7 +309,7 @@ export default function Dashboard({ session, onSignOut }) {
           category,
           description: description.trim(),
           amount_cents: cents,
-          date: new Date().toISOString().slice(0, 10),
+          date: todayISO(),
           payment_method: paymentMethod,
           installments: 1,
           installment_number: 1,
@@ -332,7 +340,7 @@ export default function Dashboard({ session, onSignOut }) {
         setPaymentMethod("debit");
         setInstallments(1);
         setIsPaid(false);
-        setPaidDate(new Date().toISOString().slice(0, 10));
+        setPaidDate(todayISO());
         setSuccessMsg("✅ Gasto adicionado com sucesso!");
         setTimeout(() => setSuccessMsg(""), 3000);
         await loadExpenses();
@@ -437,8 +445,10 @@ export default function Dashboard({ session, onSignOut }) {
 
   return (
     <main className="min-h-screen bg-[#F5F0EB] flex flex-col">
-      {/* Header */}
-      <header className="bg-[#2C2C2C] text-white sticky top-0 z-10" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+      {/* Header e abas num unico bloco sticky: as abas tinham top-16 sobrescrito por um
+          style inline com top: env(safe-area-inset-top) e ficavam por cima do header ao rolar */}
+      <div className="sticky top-0 z-10">
+      <header className="bg-[#2C2C2C] text-white" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-4 py-4 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold">💰 Gastos</h1>
@@ -456,7 +466,7 @@ export default function Dashboard({ session, onSignOut }) {
       </header>
 
       {/* Tab Navigation */}
-      <div className="bg-white border-b border-stone-200 px-4 flex gap-2 overflow-x-auto sticky top-16 z-10" style={{ top: 'env(safe-area-inset-top)' }}>
+      <div className="bg-white border-b border-stone-200 px-4 flex gap-2 overflow-x-auto">
         {[
           { id: "gastos", label: "💰 Gastos" },
           { id: "recibos", label: "📸 Recibos" },
@@ -474,6 +484,7 @@ export default function Dashboard({ session, onSignOut }) {
             {tab.label}
           </button>
         ))}
+      </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
@@ -554,6 +565,7 @@ export default function Dashboard({ session, onSignOut }) {
           userId={userId}
           monthKey={monthKey}
           income={income}
+          onVariableTotalChange={setVariableIncomeTotal}
           onUpdate={(updated) => {
             // Comparacao fora do updater de setIncome: updater precisa ser puro e o
             // updateIncomeField ja faz a atualizacao otimista e o rollback em erro.
@@ -695,7 +707,7 @@ export default function Dashboard({ session, onSignOut }) {
                 <div>✅ Pronto para salvar: <strong>{description}</strong> - <strong>{formatBRLFromCents(amount)}</strong></div>
                 <div className="text-xs">
                   {paymentMethod === "credit" ? (
-                    <span>💳 Crédito em {installments}x de {formatBRLFromCents(Math.ceil(amount / installments))}</span>
+                    <span>💳 Crédito em {installments}x de {formatBRLFromCents(splitInstallments(Number(amount), installments)[0])}</span>
                   ) : paymentMethod === "pix" ? (
                     <span>📱 PIX {isPaid ? "✓ Pago" : "⏳ Pendente"}</span>
                   ) : (

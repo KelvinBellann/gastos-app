@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { todayISO, formatDatePT } from "@/lib/dates";
 import MoneyInput from "./MoneyInput";
 
 function formatBRLFromCents(cents) {
@@ -9,14 +10,18 @@ function formatBRLFromCents(cents) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export default function IncomesManager({ userId, monthKey, income, onUpdate }) {
+function sumCents(rows) {
+  return rows.reduce((sum, v) => sum + (v.amount_cents || 0), 0);
+}
+
+export default function IncomesManager({ userId, monthKey, income, onUpdate, onVariableTotalChange }) {
   const [variableIncomes, setVariableIncomes] = useState([]);
   const [showAddVariable, setShowAddVariable] = useState(false);
   const [newVariable, setNewVariable] = useState({
     description: "",
     amount: 0,
-    date_from: new Date().toISOString().split("T")[0],
-    date_to: new Date().toISOString().split("T")[0],
+    date_from: todayISO(),
+    date_to: todayISO(),
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -34,9 +39,14 @@ export default function IncomesManager({ userId, monthKey, income, onUpdate }) {
       .eq("month_key", monthKey)
       .order("date_from");
 
-    if (!err) {
-      setVariableIncomes(data || []);
+    if (err) {
+      setError(err.message);
+      return;
     }
+    const rows = data || [];
+    setVariableIncomes(rows);
+    // O Dashboard precisa do total para o card Saldo bater com o "Total de Receitas" daqui
+    onVariableTotalChange?.(sumCents(rows));
   }
 
   async function addVariableIncome() {
@@ -80,8 +90,8 @@ export default function IncomesManager({ userId, monthKey, income, onUpdate }) {
         setNewVariable({
           description: "",
           amount: 0,
-          date_from: new Date().toISOString().split("T")[0],
-          date_to: new Date().toISOString().split("T")[0],
+          date_from: todayISO(),
+          date_to: todayISO(),
         });
         setShowAddVariable(false);
         await loadVariableIncomes();
@@ -118,10 +128,7 @@ export default function IncomesManager({ userId, monthKey, income, onUpdate }) {
     (income?.food_cents || 0) +
     (income?.spouse_salary_cents || 0);
 
-  const totalVariable = variableIncomes.reduce(
-    (sum, v) => sum + (v.amount_cents || 0),
-    0
-  );
+  const totalVariable = sumCents(variableIncomes);
 
   const grandTotal = totalFixed + totalVariable;
 
@@ -161,7 +168,7 @@ export default function IncomesManager({ userId, monthKey, income, onUpdate }) {
               />
             </>
           ) : (
-            <div className="col-span-4 text-center py-4 text-stone-500">
+            <div className="col-span-2 text-center py-4 text-stone-500">
               Carregando dados de receitas...
             </div>
           )}
@@ -280,8 +287,7 @@ export default function IncomesManager({ userId, monthKey, income, onUpdate }) {
                     {v.description}
                   </p>
                   <p className="text-xs text-stone-500">
-                    {new Date(v.date_from).toLocaleDateString("pt-BR")} até{" "}
-                    {new Date(v.date_to).toLocaleDateString("pt-BR")}
+                    {formatDatePT(v.date_from)} até {formatDatePT(v.date_to)}
                   </p>
                 </div>
                 <div className="text-right ml-2">
