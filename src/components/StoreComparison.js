@@ -19,24 +19,19 @@ export default function StoreComparison({ userId, monthKey }) {
   async function loadData() {
     setLoading(true);
     try {
-      const [receiptsRes, itemsRes] = await Promise.all([
-        supabase
-          .from("receipts")
-          .select("*")
-          .eq("user_id", userId)
-          .eq("month_key", monthKey),
-        supabase
-          .from("receipt_items")
-          .select("*")
-          .eq("receipts(user_id)", userId)
-          .eq("receipts(month_key)", monthKey),
-      ]);
+      // Os itens sao buscados abaixo pelos ids dos recibos; filtrar receipt_items por
+      // receipts(user_id) sem embed e invalido no PostgREST e retornava erro.
+      const receiptsRes = await supabase
+        .from("receipts")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("month_key", monthKey);
 
       const receiptsData = receiptsRes.data || [];
       setReceipts(receiptsData);
       setStores([...new Set(receiptsData.map((r) => r.store_name))]);
 
-      if (receiptsRes.data && receiptsRes.data.length > 0) {
+      if (receiptsData.length > 0) {
         const receiptIds = receiptsData.map((r) => r.id);
         const { data: allItems } = await supabase
           .from("receipt_items")
@@ -48,6 +43,9 @@ export default function StoreComparison({ userId, monthKey }) {
         if (selectedStores.length === 0 && receiptsData.length > 0) {
           setSelectedStores([receiptsData[0].store_name]);
         }
+      } else {
+        // Mes sem recibo: sem limpar, os itens do mes anterior continuavam na comparacao
+        setItems([]);
       }
     } finally {
       setLoading(false);
@@ -56,6 +54,7 @@ export default function StoreComparison({ userId, monthKey }) {
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarrega so ao trocar de mes
   }, [monthKey]);
 
   const comparisonData = useMemo(() => {

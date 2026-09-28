@@ -1,6 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+
+function formatCents(cents) {
+  if (!cents) return "";
+  const reais = Math.floor(cents / 100);
+  const centavos = cents % 100;
+  return `${reais.toLocaleString("pt-BR")},${String(centavos).padStart(2, "0")}`;
+}
+
+function formatFromProp(value) {
+  if (value === undefined || value === null || value === "") return "";
+  return formatCents(parseInt(value) || 0);
+}
 
 export default function MoneyInput({
   label,
@@ -11,22 +23,15 @@ export default function MoneyInput({
   autoFocus = false,
   className = ""
 }) {
-  const [displayValue, setDisplayValue] = useState("");
+  const [displayValue, setDisplayValue] = useState(() => formatFromProp(value));
+  const [prevValue, setPrevValue] = useState(value);
 
-  useEffect(() => {
-    if (value !== undefined && value !== null && value !== "") {
-      const cents = parseInt(value) || 0;
-      setDisplayValue(formatCents(cents));
-    } else {
-      setDisplayValue("");
-    }
-  }, [value]);
-
-  function formatCents(cents) {
-    if (!cents) return "";
-    const reais = Math.floor(cents / 100);
-    const centavos = cents % 100;
-    return `${reais.toLocaleString("pt-BR")},${String(centavos).padStart(2, "0")}`;
+  // Estado derivado da prop no render (padrao "prop anterior"): o useEffect que copiava
+  // value para displayValue era barrado pelo lint do React Compiler e atrasava um commit.
+  // Comparacao com !== (nao Object.is) preserva a semantica do array de deps antigo.
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setDisplayValue(formatFromProp(value));
   }
 
   function handleChange(e) {

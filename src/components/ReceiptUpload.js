@@ -4,7 +4,6 @@ import { useState, useRef } from "react";
 import { extractTextFromImage } from "@/lib/receiptOCR";
 import { parseReceipt } from "@/lib/receiptParser";
 import { supabase } from "@/lib/supabaseClient";
-import MoneyInput from "./MoneyInput";
 
 export default function ReceiptUpload({ userId, monthKey, onSuccess, onClose }) {
   const [step, setStep] = useState("upload");
@@ -57,10 +56,17 @@ export default function ReceiptUpload({ userId, monthKey, onSuccess, onClose }) 
     }
   }
 
+  // Forma funcional do setState: duas chamadas no mesmo handler faziam spread do
+  // editedData antigo e a segunda apagava o campo gravado pela primeira.
+  function updateItemFields(index, patch) {
+    setEditedData((prev) => ({
+      ...prev,
+      items: prev.items.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+    }));
+  }
+
   function updateItemField(index, field, value) {
-    const updated = [...editedData.items];
-    updated[index] = { ...updated[index], [field]: value };
-    setEditedData({ ...editedData, items: updated });
+    updateItemFields(index, { [field]: value });
   }
 
   function removeItem(index) {
@@ -242,8 +248,10 @@ export default function ReceiptUpload({ userId, monthKey, onSuccess, onClose }) 
                             onChange={(e) => {
                               const onlyNumbers = e.target.value.replace(/\D/g, "");
                               const cents = parseInt(onlyNumbers) || 0;
-                              updateItemField(idx, "unitPriceCents", cents);
-                              updateItemField(idx, "totalPriceCents", Math.round(cents * item.quantity));
+                              updateItemFields(idx, {
+                                unitPriceCents: cents,
+                                totalPriceCents: Math.round(cents * item.quantity),
+                              });
                             }}
                             className="border border-stone-300 rounded p-1 text-xs w-full"
                           />

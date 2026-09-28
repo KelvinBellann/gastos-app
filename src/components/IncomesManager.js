@@ -23,6 +23,7 @@ export default function IncomesManager({ userId, monthKey, income, onUpdate }) {
 
   useEffect(() => {
     loadVariableIncomes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarrega so ao trocar de mes
   }, [monthKey]);
 
   async function loadVariableIncomes() {

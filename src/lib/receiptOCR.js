@@ -4,13 +4,9 @@ let worker = null;
 
 async function initWorker() {
   if (!worker) {
-    worker = await Tesseract.createWorker({
-      logger: (m) => {
-        if (m.status === "recognizing text") {
-          console.log(`OCR Progress: ${Math.round(m.progress * 100)}%`);
-        }
-      },
-    });
+    // tesseract.js 7 recebe (langs, oem, options); a forma antiga createWorker({ logger })
+    // fazia o objeto de opcoes ser lido como lista de idiomas e o OCR nunca inicializava.
+    worker = await Tesseract.createWorker("por+eng", Tesseract.OEM.LSTM_ONLY);
   }
   return worker;
 }

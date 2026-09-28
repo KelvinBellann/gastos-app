@@ -63,6 +63,7 @@ export default function ReceiptsTab({ userId, monthKey }) {
 
   useEffect(() => {
     loadReceipts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarrega so ao trocar de mes
   }, [monthKey]);
 
   const totalSpent = useMemo(() => {
@@ -101,7 +102,7 @@ export default function ReceiptsTab({ userId, monthKey }) {
         <div className="bg-white rounded-2xl border border-stone-100 p-8 text-center">
           <p className="text-stone-500">Nenhum recibo cadastrado neste mês</p>
           <p className="text-xs text-stone-400 mt-2">
-            Clique em "Novo Recibo" para começar
+            Clique em &quot;Novo Recibo&quot; para começar
           </p>
         </div>
       ) : (

@@ -13,11 +13,6 @@ function toMonthKey(date = new Date()) {
   return `${y}-${m}`;
 }
 
-function monthKeyToDate(monthKey) {
-  const [y, m] = monthKey.split("-").map(Number);
-  return new Date(y, m - 1, 1);
-}
-
 function monthLabel(monthKey) {
   const [y, m] = monthKey.split("-").map(Number);
   const date = new Date(y, m - 1, 1);
@@ -196,9 +191,11 @@ export default function Dashboard({ session, onSignOut }) {
     setBusy(true);
     setErr("");
 
-    const [incRes, expRes] = await Promise.all([
+    // loadExpenses e a unica fonte da lista: a query por month_key puro deixava de fora
+    // parcelas de credito e gastos fixos de outros meses ate o proximo add/edit/delete.
+    const [incRes] = await Promise.all([
       supabase.from("incomes").select("*").eq("user_id", userId).eq("month_key", monthKey).maybeSingle(),
-      supabase.from("expenses").select("*").eq("user_id", userId).eq("month_key", monthKey).order("created_at", { ascending: false }),
+      loadExpenses(),
     ]);
 
     if (incRes.error) {
@@ -223,9 +220,6 @@ export default function Dashboard({ session, onSignOut }) {
     } else {
       setIncome(incRes.data);
     }
-
-    if (expRes.error) setErr(expRes.error.message);
-    else setExpenses(expRes.data || []);
 
     setBusy(false);
   }
@@ -317,9 +311,7 @@ export default function Dashboard({ session, onSignOut }) {
         });
       }
 
-      console.log("Inserindo gastos:", expenseEntries);
-
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("expenses")
         .insert(expenseEntries)
         .select();
@@ -335,7 +327,6 @@ export default function Dashboard({ session, onSignOut }) {
           fullError: error,
         });
       } else {
-        console.log("Gasto salvo com sucesso:", data);
         setDescription("");
         setAmount("");
         setPaymentMethod("debit");
@@ -564,22 +555,14 @@ export default function Dashboard({ session, onSignOut }) {
           monthKey={monthKey}
           income={income}
           onUpdate={(updated) => {
-            setIncome(prev => {
-              Object.keys(updated).forEach((key) => {
-                if (
-                  [
-                    "salary_net_cents",
-                    "multibenefits_cents",
-                    "food_cents",
-                    "spouse_salary_cents",
-                  ].includes(key) &&
-                  updated[key] !== prev[key]
-                ) {
-                  updateIncomeField(key, updated[key]);
-                }
-              });
-              return updated;
-            });
+            // Comparacao fora do updater de setIncome: updater precisa ser puro e o
+            // updateIncomeField ja faz a atualizacao otimista e o rollback em erro.
+            if (!income) return;
+            for (const key of Object.keys(DEFAULT_INCOME)) {
+              if (updated[key] !== income[key]) {
+                updateIncomeField(key, updated[key]);
+              }
+            }
           }}
         />
 
@@ -815,22 +798,28 @@ export default function Dashboard({ session, onSignOut }) {
                                   {isExpanded ? "▼" : "▶"}
                                 </button>
                               )}
-                              <button
-                                onClick={() => startEdit(e)}
-                                disabled={busy || editingId}
-                                className="text-stone-400 hover:text-stone-700 font-bold text-lg transition disabled:opacity-50"
-                                title="Editar"
-                              >
-                                ✎
-                              </button>
-                              <button
-                                onClick={() => deleteExpense(e.id)}
-                                disabled={busy || editingId}
-                                className="text-stone-400 hover:text-red-500 font-bold text-lg transition disabled:opacity-50"
-                                title="Deletar"
-                              >
-                                ✕
-                              </button>
+                              {/* Linha agrupada soma varios registros: editar/excluir so nos sub-itens,
+                                  senao a soma do grupo era gravada em um unico registro. */}
+                              {!hasMultiple && (
+                                <>
+                                  <button
+                                    onClick={() => startEdit(e)}
+                                    disabled={busy || editingId !== null}
+                                    className="text-stone-400 hover:text-stone-700 font-bold text-lg transition disabled:opacity-50"
+                                    title="Editar"
+                                  >
+                                    ✎
+                                  </button>
+                                  <button
+                                    onClick={() => deleteExpense(e.id)}
+                                    disabled={busy || editingId !== null}
+                                    className="text-stone-400 hover:text-red-500 font-bold text-lg transition disabled:opacity-50"
+                                    title="Deletar"
+                                  >
+                                    ✕
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -851,7 +840,7 @@ export default function Dashboard({ session, onSignOut }) {
                                 <div className="flex gap-1">
                                   <button
                                     onClick={() => startEdit(item)}
-                                    disabled={busy || editingId}
+                                    disabled={busy || editingId !== null}
                                     className="text-blue-400 hover:text-blue-700 font-bold transition disabled:opacity-50"
                                     title="Editar"
                                   >
@@ -859,7 +848,7 @@ export default function Dashboard({ session, onSignOut }) {
                                   </button>
                                   <button
                                     onClick={() => deleteExpense(item.id)}
-                                    disabled={busy || editingId}
+                                    disabled={busy || editingId !== null}
                                     className="text-blue-400 hover:text-red-500 font-bold transition disabled:opacity-50"
                                     title="Deletar"
                                   >
@@ -872,7 +861,8 @@ export default function Dashboard({ session, onSignOut }) {
                         )}
 
                         {/* MODO EDIÇÃO - ITEM INDIVIDUAL */}
-                        {editingId === e.id && (
+                        {/* O editor aparece para o registro em edicao, seja a linha unica ou um sub-item do grupo */}
+                        {editingId !== null && e.items.some((item) => item.id === editingId) && (
                           <div className="ml-4 mt-2 bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex items-center gap-2">
                             <input
                               type="text"
@@ -882,7 +872,7 @@ export default function Dashboard({ session, onSignOut }) {
                               className="flex-1 border border-yellow-300 rounded p-1 text-xs focus:outline-none focus:border-yellow-600"
                             />
                             <button
-                              onClick={() => saveEdit(e.id)}
+                              onClick={() => saveEdit(editingId)}
                               disabled={busy}
                               className="bg-[#4A7C59] text-white px-2 py-1 rounded text-xs font-medium hover:bg-[#3D6A4A] transition"
                             >
@@ -917,17 +907,5 @@ export default function Dashboard({ session, onSignOut }) {
         )}
       </div>
     </main>
-  );
-}
-
-function MoneyField({ label, value, onChange, disabled }) {
-  return (
-    <MoneyInput
-      label={label}
-      value={value}
-      onChange={onChange}
-      placeholder="0,00"
-      disabled={disabled}
-    />
   );
 }
