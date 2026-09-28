@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { formatDatePT } from "@/lib/dates";
 import ReceiptUpload from "./ReceiptUpload";
 
 function formatBRLFromCents(cents) {
@@ -9,56 +10,68 @@ function formatBRLFromCents(cents) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function formatDatePT(dateStr) {
-  const [y, m, d] = dateStr.split("-");
-  return new Date(y, m - 1, d).toLocaleDateString("pt-BR");
-}
-
 export default function ReceiptsTab({ userId, monthKey }) {
   const [receipts, setReceipts] = useState([]);
   const [showUpload, setShowUpload] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [expandedId, setExpandedId] = useState(null);
   const [receiptItems, setReceiptItems] = useState({});
 
   async function loadReceipts() {
     setLoading(true);
+    setError("");
     try {
-      const { data } = await supabase
+      const receiptsRes = await supabase
         .from("receipts")
         .select("*")
         .eq("user_id", userId)
         .eq("month_key", monthKey)
         .order("receipt_date", { ascending: false });
 
-      setReceipts(data || []);
+      if (receiptsRes.error) {
+        setError(receiptsRes.error.message);
+        return;
+      }
+      const rows = receiptsRes.data || [];
+      setReceipts(rows);
+
+      // Itens de todos os recibos do mes de uma vez: carregando so ao expandir, os cards
+      // "Total Gasto" e por loja ficavam em R$ 0,00 ate o usuario abrir cada recibo
+      if (rows.length === 0) {
+        setReceiptItems({});
+        return;
+      }
+      const itemsRes = await supabase
+        .from("receipt_items")
+        .select("*")
+        .in("receipt_id", rows.map((r) => r.id))
+        .order("position");
+
+      if (itemsRes.error) {
+        setError(itemsRes.error.message);
+        return;
+      }
+      const grouped = {};
+      for (const item of itemsRes.data || []) {
+        (grouped[item.receipt_id] ||= []).push(item);
+      }
+      setReceiptItems(grouped);
     } finally {
       setLoading(false);
     }
   }
 
-  async function loadReceiptItems(receiptId) {
-    if (receiptItems[receiptId]) return;
-
-    const { data } = await supabase
-      .from("receipt_items")
-      .select("*")
-      .eq("receipt_id", receiptId)
-      .order("position");
-
-    setReceiptItems((prev) => ({ ...prev, [receiptId]: data || [] }));
-  }
-
   async function deleteReceipt(receiptId) {
     if (!window.confirm("Deletar este recibo?")) return;
 
-    try {
-      await supabase.from("receipt_items").delete().eq("receipt_id", receiptId);
-      await supabase.from("receipts").delete().eq("id", receiptId);
-      await loadReceipts();
-    } catch (err) {
-      console.error("Erro ao deletar:", err);
+    // receipt_items tem FK com ON DELETE CASCADE; basta apagar o recibo
+    const { error: err } = await supabase.from("receipts").delete().eq("id", receiptId);
+    if (err) {
+      setError(err.message);
+      return;
     }
+    await loadReceipts();
   }
 
   useEffect(() => {
@@ -98,7 +111,15 @@ export default function ReceiptsTab({ userId, monthKey }) {
         </button>
       </div>
 
-      {receipts.length === 0 ? (
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
+
+      {loading && receipts.length === 0 ? (
+        <div className="text-center py-8 text-stone-500">Carregando...</div>
+      ) : receipts.length === 0 ? (
         <div className="bg-white rounded-2xl border border-stone-100 p-8 text-center">
           <p className="text-stone-500">Nenhum recibo cadastrado neste mês</p>
           <p className="text-xs text-stone-400 mt-2">
@@ -146,10 +167,7 @@ export default function ReceiptsTab({ userId, monthKey }) {
             {receipts.map((receipt) => (
               <div key={receipt.id} className="bg-white rounded-xl border border-stone-100">
                 <button
-                  onClick={() => {
-                    setExpandedId(expandedId === receipt.id ? null : receipt.id);
-                    loadReceiptItems(receipt.id);
-                  }}
+                  onClick={() => setExpandedId(expandedId === receipt.id ? null : receipt.id)}
                   className="w-full p-4 flex items-center justify-between hover:bg-stone-50 transition text-left"
                 >
                   <div className="flex-1 min-w-0">

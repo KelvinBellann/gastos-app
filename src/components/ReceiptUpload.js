@@ -4,6 +4,12 @@ import { useState, useRef } from "react";
 import { extractTextFromImage } from "@/lib/receiptOCR";
 import { parseReceipt } from "@/lib/receiptParser";
 import { supabase } from "@/lib/supabaseClient";
+import { isValidISODate } from "@/lib/dates";
+
+function formatPriceInput(cents) {
+  // Sempre 2 casas: toLocaleString sem opcoes mostrava "1,5" para 150 centavos
+  return (cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 export default function ReceiptUpload({ userId, monthKey, onSuccess, onClose }) {
   const [step, setStep] = useState("upload");
@@ -75,8 +81,19 @@ export default function ReceiptUpload({ userId, monthKey, onSuccess, onClose }) 
   }
 
   async function handleSaveReceipt() {
-    setLoading(true);
     setError("");
+
+    // store_name e receipt_date sao NOT NULL e o parser pode gerar datas como 2024-02-31
+    if (!editedData.storeName?.trim()) {
+      setError("Informe o nome da loja");
+      return;
+    }
+    if (!isValidISODate(editedData.receiptDate)) {
+      setError("Data do recibo inválida");
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const { data: receiptData, error: receiptError } = await supabase
@@ -84,7 +101,7 @@ export default function ReceiptUpload({ userId, monthKey, onSuccess, onClose }) 
         .insert({
           user_id: userId,
           month_key: monthKey,
-          store_name: editedData.storeName,
+          store_name: editedData.storeName.trim(),
           receipt_date: editedData.receiptDate,
           raw_text: editedData.rawText,
           confidence_score: ocrResult.confidence,
@@ -146,6 +163,11 @@ export default function ReceiptUpload({ userId, monthKey, onSuccess, onClose }) 
             <div className="space-y-4">
               <div
                 onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  handleFileSelect(e.dataTransfer.files?.[0]);
+                }}
                 className="border-2 border-dashed border-stone-300 rounded-xl p-8 text-center cursor-pointer hover:bg-stone-50 transition"
               >
                 <p className="text-4xl mb-2">📷</p>
@@ -244,7 +266,7 @@ export default function ReceiptUpload({ userId, monthKey, onSuccess, onClose }) 
                             type="text"
                             inputMode="decimal"
                             placeholder="Preço"
-                            value={item.unitPriceCents > 0 ? (item.unitPriceCents / 100).toLocaleString("pt-BR") : ""}
+                            value={item.unitPriceCents > 0 ? formatPriceInput(item.unitPriceCents) : ""}
                             onChange={(e) => {
                               const onlyNumbers = e.target.value.replace(/\D/g, "");
                               const cents = parseInt(onlyNumbers) || 0;

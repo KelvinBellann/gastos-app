@@ -28,8 +28,16 @@ export default function StoreComparison({ userId, monthKey }) {
         .eq("month_key", monthKey);
 
       const receiptsData = receiptsRes.data || [];
+      const storeNames = [...new Set(receiptsData.map((r) => r.store_name))];
       setReceipts(receiptsData);
-      setStores([...new Set(receiptsData.map((r) => r.store_name))]);
+      setStores(storeNames);
+
+      // Forma funcional: o valor de selectedStores capturado aqui e o do render anterior.
+      // Mantem so as lojas que existem no mes novo; se nenhuma sobrar, seleciona a primeira.
+      setSelectedStores((prev) => {
+        const kept = prev.filter((s) => storeNames.includes(s));
+        return kept.length > 0 ? kept : storeNames.slice(0, 1);
+      });
 
       if (receiptsData.length > 0) {
         const receiptIds = receiptsData.map((r) => r.id);
@@ -39,10 +47,6 @@ export default function StoreComparison({ userId, monthKey }) {
           .in("receipt_id", receiptIds);
 
         setItems(allItems || []);
-
-        if (selectedStores.length === 0 && receiptsData.length > 0) {
-          setSelectedStores([receiptsData[0].store_name]);
-        }
       } else {
         // Mes sem recibo: sem limpar, os itens do mes anterior continuavam na comparacao
         setItems([]);
@@ -58,7 +62,7 @@ export default function StoreComparison({ userId, monthKey }) {
   }, [monthKey]);
 
   const comparisonData = useMemo(() => {
-    if (selectedStores.length === 0) return { products: [], storePrices: {} };
+    if (selectedStores.length === 0) return { products: [] };
 
     const receiptsByStore = {};
     receipts.forEach((receipt) => {
@@ -121,7 +125,7 @@ export default function StoreComparison({ userId, monthKey }) {
       })
       .sort((a, b) => b.minPrice - a.minPrice);
 
-    return { products, selectedStores };
+    return { products };
   }, [selectedStores, receipts, items]);
 
   const storeStats = useMemo(() => {
@@ -266,7 +270,7 @@ export default function StoreComparison({ userId, monthKey }) {
 
               <div className="p-4 bg-stone-50 border-t border-stone-200">
                 <p className="text-xs text-stone-600">
-                  🟢 Melhor preço | Preços são unitários (primeira compra detectada)
+                  🟢 Melhor preço | Preços unitários: média das compras do mês em cada loja
                 </p>
               </div>
             </div>

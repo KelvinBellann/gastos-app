@@ -68,31 +68,25 @@ export default function LoginPage() {
       return;
     }
 
-    if (data?.user) {
-      setSuccessMsg("✓ Conta criada! Fazendo login automaticamente...");
-
-      setTimeout(async () => {
-        const { error: loginErr } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (loginErr) {
-          setError("Conta criada, mas houve erro ao fazer login. Tente entrar manualmente.");
-          setPassword("");
-          setLoading(false);
-          setTimeout(() => {
-            setMode("signin");
-            setSuccessMsg("");
-          }, 3000);
-        } else {
-          // Auto-login successful - session will be detected by parent component
-          setPassword("");
-          setLoading(false);
-          setSuccessMsg("");
-        }
-      }, 1500);
+    if (!data?.user) {
+      // Sem erro e sem usuario: antes o loading ficava preso para sempre
+      setError("Não foi possível criar a conta. Tente novamente.");
+      setLoading(false);
+      return;
     }
+
+    setPassword("");
+    setLoading(false);
+
+    if (data.session) {
+      // Confirmacao de email desligada no projeto: o signUp ja devolve a sessao e o
+      // onAuthStateChange em page.js troca para o Dashboard. Nao precisa logar de novo.
+      return;
+    }
+
+    // Confirmacao de email ligada: o login automatico falharia com "Email not confirmed"
+    setMode("signin");
+    setSuccessMsg("Conta criada. Confirme o email que enviamos e depois entre com sua senha.");
   }
 
   return (
