@@ -1,331 +1,222 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import { todayISO, formatDatePT } from "@/lib/dates";
+import { useEffect, useState } from "react";
+import { Plus, Trash, X } from "@phosphor-icons/react";
+import { deleteVariableIncome, insertVariableIncome, listVariableIncomes, restoreRows } from "@/lib/localDb";
+import { todayISO, formatDatePT, isValidISODate } from "@/lib/dates";
+import { formatBRLFromCents, sumCents } from "@/lib/money";
+import { toSentenceCase } from "@/lib/text";
 import MoneyInput from "./MoneyInput";
+import { Button, Card, CardHeader, Field, IconButton, INPUT_CLASS, useToast } from "./ui";
 
-function formatBRLFromCents(cents) {
-  const value = (cents || 0) / 100;
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const FIXED_FIELDS = [
+  { field: "salary_net_cents", label: "Seu salário" },
+  { field: "multibenefits_cents", label: "Multibenefícios" },
+  { field: "food_cents", label: "Alimentação" },
+  { field: "spouse_salary_cents", label: "Salário da esposa" },
+];
+
+function emptyVariable() {
+  return { description: "", amount: "", date_from: todayISO(), date_to: todayISO() };
 }
 
-function sumCents(rows) {
-  return rows.reduce((sum, v) => sum + (v.amount_cents || 0), 0);
-}
-
-export default function IncomesManager({ userId, monthKey, income, onUpdate, onVariableTotalChange }) {
+export default function IncomesManager({ monthKey, income, onUpdate, onVariableTotalChange, onError }) {
+  const toast = useToast();
   const [variableIncomes, setVariableIncomes] = useState([]);
-  const [showAddVariable, setShowAddVariable] = useState(false);
-  const [newVariable, setNewVariable] = useState({
-    description: "",
-    amount: 0,
-    date_from: todayISO(),
-    date_to: todayISO(),
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [draft, setDraft] = useState(emptyVariable);
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  async function loadVariableIncomes() {
+    try {
+      const rows = await listVariableIncomes(monthKey);
+      setVariableIncomes(rows);
+      // O Dashboard precisa do total para o Saldo bater com o "Total de receitas" daqui
+      onVariableTotalChange?.(sumCents(rows));
+    } catch (e) {
+      onError?.(e.message);
+    }
+  }
 
   useEffect(() => {
     loadVariableIncomes();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recarrega so ao trocar de mes
   }, [monthKey]);
 
-  async function loadVariableIncomes() {
-    const { data, error: err } = await supabase
-      .from("variable_incomes")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("month_key", monthKey)
-      .order("date_from");
-
-    if (err) {
-      setError(err.message);
-      return;
+  async function handleAdd(e) {
+    e.preventDefault();
+    const amount = Number(draft.amount) || 0;
+    const next = {};
+    if (!draft.description.trim()) next.description = "Informe a origem, por exemplo: bônus.";
+    if (amount <= 0) next.amount = "Informe um valor maior que zero.";
+    if (!isValidISODate(draft.date_from)) next.date_from = "Data inválida.";
+    if (!isValidISODate(draft.date_to)) next.date_to = "Data inválida.";
+    // Datas ISO comparam como texto; new Date("YYYY-MM-DD") usaria UTC
+    else if (isValidISODate(draft.date_from) && draft.date_from > draft.date_to) {
+      next.date_to = "A data final precisa ser igual ou depois da inicial.";
     }
-    const rows = data || [];
-    setVariableIncomes(rows);
-    // O Dashboard precisa do total para o card Saldo bater com o "Total de Receitas" daqui
-    onVariableTotalChange?.(sumCents(rows));
-  }
+    setErrors(next);
+    if (Object.keys(next).length > 0) return;
 
-  async function addVariableIncome() {
-    setError("");
-
-    if (!newVariable.description.trim()) {
-      setError("Descrição é obrigatória");
-      return;
-    }
-
-    if (newVariable.amount < 0 || !Number.isInteger(newVariable.amount)) {
-      setError("Valor inválido");
-      return;
-    }
-
-    if (newVariable.amount === 0) {
-      setError("Valor deve ser maior que zero");
-      return;
-    }
-
-    if (new Date(newVariable.date_from) > new Date(newVariable.date_to)) {
-      setError("Data 'De' não pode ser maior que 'Para'");
-      return;
-    }
-
-    setLoading(true);
-
+    setSaving(true);
     try {
-      const { error: err } = await supabase.from("variable_incomes").insert({
-        user_id: userId,
+      await insertVariableIncome({
         month_key: monthKey,
-        description: newVariable.description.trim(),
-        amount_cents: newVariable.amount,
-        date_from: newVariable.date_from,
-        date_to: newVariable.date_to,
+        description: toSentenceCase(draft.description),
+        amount_cents: amount,
+        date_from: draft.date_from,
+        date_to: draft.date_to,
       });
-
-      if (err) {
-        setError(err.message);
-      } else {
-        setNewVariable({
-          description: "",
-          amount: 0,
-          date_from: todayISO(),
-          date_to: todayISO(),
-        });
-        setShowAddVariable(false);
-        await loadVariableIncomes();
-      }
+      setDraft(emptyVariable());
+      setShowAdd(false);
+      await loadVariableIncomes();
+      toast({ message: "Receita variável adicionada." });
+    } catch (err) {
+      onError?.(`Não foi possível salvar: ${err.message}`);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
-  async function deleteVariableIncome(id) {
-    if (!window.confirm("Excluir esta receita variável?")) return;
-
-    setLoading(true);
-
+  async function handleDelete(v) {
     try {
-      const { error: err } = await supabase
-        .from("variable_incomes")
-        .delete()
-        .eq("id", id);
-
-      if (err) {
-        setError(err.message);
-      } else {
-        await loadVariableIncomes();
-      }
-    } finally {
-      setLoading(false);
+      const removed = await deleteVariableIncome(v.id);
+      await loadVariableIncomes();
+      toast({
+        message: `${v.description} excluída.`,
+        onAction: async () => {
+          await restoreRows(removed);
+          await loadVariableIncomes();
+        },
+      });
+    } catch (err) {
+      onError?.(`Não foi possível excluir: ${err.message}`);
     }
   }
 
-  const totalFixed =
-    (income?.salary_net_cents || 0) +
-    (income?.multibenefits_cents || 0) +
-    (income?.food_cents || 0) +
-    (income?.spouse_salary_cents || 0);
-
+  const totalFixed = FIXED_FIELDS.reduce((s, { field }) => s + (income?.[field] || 0), 0);
   const totalVariable = sumCents(variableIncomes);
 
-  const grandTotal = totalFixed + totalVariable;
-
   return (
-    <div className="space-y-4">
-      {/* Fixed Incomes */}
-      <div className="bg-white rounded-2xl border border-stone-100 p-4">
-        <h3 className="text-lg font-bold text-stone-900 mb-1">
-          📊 Receitas Fixas (Todo mês)
-        </h3>
-        <p className="text-xs text-stone-500 mb-3">
-          Valores que se repetem mensalmente
-        </p>
+    <Card aria-labelledby="receitas-titulo">
+      <CardHeader
+        id="receitas-titulo"
+        title="Receitas"
+        description="Fixas se repetem todo mês. Variáveis valem só para este mês."
+      />
 
-        <div className="grid grid-cols-2 gap-2">
-          {income ? (
-            <>
-              <MoneyInput
-                label="Seu salário"
-                value={income.salary_net_cents || 0}
-                onChange={(cents) => onUpdate({ ...income, salary_net_cents: cents })}
-              />
-              <MoneyInput
-                label="Multibenefícios"
-                value={income.multibenefits_cents || 0}
-                onChange={(cents) => onUpdate({ ...income, multibenefits_cents: cents })}
-              />
-              <MoneyInput
-                label="Alimentação"
-                value={income.food_cents || 0}
-                onChange={(cents) => onUpdate({ ...income, food_cents: cents })}
-              />
-              <MoneyInput
-                label="Salário esposa"
-                value={income.spouse_salary_cents || 0}
-                onChange={(cents) => onUpdate({ ...income, spouse_salary_cents: cents })}
-              />
-            </>
-          ) : (
-            <div className="col-span-2 text-center py-4 text-stone-500">
-              Carregando dados de receitas...
-            </div>
-          )}
-        </div>
-
-        <div className="mt-3 p-2 bg-stone-50 rounded-lg border border-stone-200">
-          <p className="text-sm font-bold text-stone-700">
-            Total Fixo: {formatBRLFromCents(totalFixed)}
-          </p>
-        </div>
+      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+        {FIXED_FIELDS.map(({ field, label }) => (
+          <MoneyInput
+            key={field}
+            id={`receita-${field}`}
+            name={field}
+            label={label}
+            value={income?.[field] || 0}
+            disabled={!income}
+            onChange={(cents) => income && onUpdate({ ...income, [field]: Number(cents) || 0 })}
+          />
+        ))}
       </div>
 
-      {/* Variable Incomes */}
-      <div className="bg-white rounded-2xl border border-stone-100 p-4">
-        <div className="flex justify-between items-center mb-3">
-          <div>
-            <h3 className="text-lg font-bold text-stone-900">
-              💰 Receitas Variáveis
-            </h3>
-            <p className="text-xs text-stone-500">Com período específico</p>
-          </div>
-          <button
-            onClick={() => setShowAddVariable(!showAddVariable)}
-            className="bg-[#3D3D3D] text-white px-3 py-1.5 rounded-lg font-bold hover:bg-[#2C2C2C] transition text-sm"
-          >
-            {showAddVariable ? "✕" : "+ Adicionar"}
-          </button>
+      <div className="mt-5 border-t border-line pt-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-ink">Variáveis</h3>
+          <Button variant="secondary" size="sm" onClick={() => setShowAdd((v) => !v)} aria-expanded={showAdd}>
+            {showAdd ? <X size={16} aria-hidden="true" /> : <Plus size={16} weight="bold" aria-hidden="true" />}
+            {showAdd ? "Cancelar" : "Adicionar"}
+          </Button>
         </div>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm mb-3">
-            {error}
-          </div>
-        )}
-
-        {showAddVariable && (
-          <div className="bg-stone-50 p-3 rounded-lg mb-3 space-y-2 border border-stone-200">
-            <input
-              type="text"
-              placeholder="Ex: Bônus, Freelance, etc"
-              value={newVariable.description}
-              onChange={(e) =>
-                setNewVariable({ ...newVariable, description: e.target.value })
-              }
-              className="w-full border border-stone-300 rounded p-2 text-xs"
-            />
-
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="text-xs font-medium text-stone-600">De</label>
+        {showAdd && (
+          <form onSubmit={handleAdd} noValidate className="mb-4 space-y-3 rounded-xl bg-surface-2 p-3">
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
+              <Field label="Origem" htmlFor="variavel-descricao" error={errors.description}>
                 <input
-                  type="date"
-                  value={newVariable.date_from}
-                  onChange={(e) =>
-                    setNewVariable({
-                      ...newVariable,
-                      date_from: e.target.value,
-                    })
-                  }
-                  className="w-full border border-stone-300 rounded p-1 text-xs"
+                  id="variavel-descricao"
+                  name="origem"
+                  autoComplete="off"
+                  placeholder="Ex.: bônus, freela..."
+                  value={draft.description}
+                  onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                  aria-invalid={Boolean(errors.description)}
+                  className={INPUT_CLASS}
                 />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-stone-600">Para</label>
-                <input
-                  type="date"
-                  value={newVariable.date_to}
-                  onChange={(e) =>
-                    setNewVariable({ ...newVariable, date_to: e.target.value })
-                  }
-                  className="w-full border border-stone-300 rounded p-1 text-xs"
+              </Field>
+              <Field label="Valor" htmlFor="variavel-valor" error={errors.amount}>
+                <MoneyInput
+                  id="variavel-valor"
+                  name="valor"
+                  value={draft.amount}
+                  onChange={(cents) => setDraft({ ...draft, amount: cents })}
+                  aria-invalid={Boolean(errors.amount)}
                 />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-stone-600 block mb-1">
-                  Valor
-                </label>
-                <div className="flex-1">
-                  <MoneyInput
-                    value={newVariable.amount || 0}
-                    onChange={(cents) =>
-                      setNewVariable({ ...newVariable, amount: cents })
-                    }
-                    placeholder="0,00"
-                    className="text-xs"
-                  />
-                </div>
-              </div>
+              </Field>
             </div>
-
-            <button
-              onClick={addVariableIncome}
-              disabled={loading}
-              className="w-full bg-[#4A7C59] text-white py-1.5 rounded font-bold hover:bg-[#3D6A4A] transition disabled:opacity-60 text-sm"
-            >
-              {loading ? "Salvando..." : "Salvar"}
-            </button>
-          </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="De" htmlFor="variavel-de" error={errors.date_from}>
+                <input
+                  id="variavel-de"
+                  type="date"
+                  value={draft.date_from}
+                  onChange={(e) => setDraft({ ...draft, date_from: e.target.value })}
+                  className={INPUT_CLASS}
+                />
+              </Field>
+              <Field label="Até" htmlFor="variavel-ate" error={errors.date_to}>
+                <input
+                  id="variavel-ate"
+                  type="date"
+                  value={draft.date_to}
+                  onChange={(e) => setDraft({ ...draft, date_to: e.target.value })}
+                  aria-invalid={Boolean(errors.date_to)}
+                  className={INPUT_CLASS}
+                />
+              </Field>
+            </div>
+            <Button type="submit" className="w-full" disabled={saving}>
+              {saving ? "Salvando..." : "Salvar receita"}
+            </Button>
+          </form>
         )}
 
         {variableIncomes.length === 0 ? (
-          <p className="text-stone-500 text-sm py-2">
-            Nenhuma receita variável
-          </p>
+          <p className="text-[13px] text-mute">Nenhuma receita variável neste mês.</p>
         ) : (
-          <div className="space-y-2">
+          <ul className="divide-y divide-line">
             {variableIncomes.map((v) => (
-              <div
-                key={v.id}
-                className="flex justify-between items-center p-2 bg-stone-50 rounded border border-stone-200"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-stone-900 text-sm">
-                    {v.description}
-                  </p>
-                  <p className="text-xs text-stone-500">
+              <li key={v.id} className="flex items-center gap-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-ink">{v.description}</p>
+                  <p className="num text-xs text-mute">
                     {formatDatePT(v.date_from)} até {formatDatePT(v.date_to)}
                   </p>
                 </div>
-                <div className="text-right ml-2">
-                  <p className="font-bold text-stone-900 text-sm">
-                    {formatBRLFromCents(v.amount_cents)}
-                  </p>
-                  <button
-                    onClick={() => deleteVariableIncome(v.id)}
-                    className="text-red-600 hover:text-red-700 text-xs"
-                  >
-                    Excluir
-                  </button>
-                </div>
-              </div>
+                <p className="num text-sm font-semibold text-positive">{formatBRLFromCents(v.amount_cents)}</p>
+                <IconButton label={`Excluir ${v.description}`} variant="danger" onClick={() => handleDelete(v)}>
+                  <Trash size={17} aria-hidden="true" />
+                </IconButton>
+              </li>
             ))}
-          </div>
-        )}
-
-        {variableIncomes.length > 0 && (
-          <div className="mt-3 p-2 bg-stone-50 rounded-lg border border-stone-200">
-            <p className="text-sm font-bold text-stone-700">
-              Total Variável: {formatBRLFromCents(totalVariable)}
-            </p>
-          </div>
+          </ul>
         )}
       </div>
 
-      {/* Grand Total */}
-      <div className="bg-gradient-to-r from-[#EDF4F0] to-[#F4EDEE] rounded-2xl border border-stone-200 p-4">
-        <p className="text-sm text-stone-600 mb-1">Total de Receitas</p>
-        <p className="text-2xl font-bold text-stone-900">
-          {formatBRLFromCents(grandTotal)}
-        </p>
-        <div className="text-xs text-stone-500 mt-2 space-y-1">
-          <p>Fixas: {formatBRLFromCents(totalFixed)}</p>
-          <p>Variáveis: {formatBRLFromCents(totalVariable)}</p>
+      <dl className="mt-5 grid grid-cols-3 gap-3 rounded-xl bg-primary-pale p-3 text-primary-ink">
+        <div>
+          <dt className="text-xs">Fixas</dt>
+          <dd className="num text-sm font-semibold">{formatBRLFromCents(totalFixed)}</dd>
         </div>
-      </div>
-    </div>
+        <div>
+          <dt className="text-xs">Variáveis</dt>
+          <dd className="num text-sm font-semibold">{formatBRLFromCents(totalVariable)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs">Total</dt>
+          <dd className="num text-sm font-semibold">{formatBRLFromCents(totalFixed + totalVariable)}</dd>
+        </div>
+      </dl>
+    </Card>
   );
 }

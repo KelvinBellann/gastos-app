@@ -1,56 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import LoginPage from "@/components/LoginPage";
+import { useSyncExternalStore } from "react";
 import Dashboard from "@/components/Dashboard";
+import { Skeleton, ToastProvider } from "@/components/ui";
+
+const subscribe = () => () => {};
 
 export default function Home() {
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // false no servidor e na hidratacao, true depois. Os dados vivem no localStorage, entao
+  // o painel so renderiza no navegador; assim o HTML do servidor nunca diverge do cliente.
+  const isClient = useSyncExternalStore(subscribe, () => true, () => false);
 
-  useEffect(() => {
-    async function checkSession() {
-      try {
-        const { data } = await supabase.auth.getSession();
-        setSession(data?.session);
-      } catch (err) {
-        console.error("Erro ao verificar sessão:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    checkSession();
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-    });
-
-    return () => {
-      listener?.subscription.unsubscribe();
-    };
-  }, []);
-
-  async function handleSignOut() {
-    await supabase.auth.signOut();
-    setSession(null);
-  }
-
-  if (loading) {
+  if (!isClient) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-indigo-500 to-purple-500">
-        <div className="text-white text-center">
-          <div className="text-4xl mb-4">💰</div>
-          <p>Carregando...</p>
-        </div>
-      </div>
+      <main className="mx-auto flex min-h-[100dvh] max-w-5xl flex-col gap-4 px-4 py-6" aria-busy="true">
+        <span className="sr-only">Carregando...</span>
+        <Skeleton className="h-10 w-40" />
+        <Skeleton className="h-32" />
+        <Skeleton className="h-64" />
+      </main>
     );
   }
 
-  return session ? (
-    <Dashboard session={session} onSignOut={handleSignOut} />
-  ) : (
-    <LoginPage />
+  return (
+    <ToastProvider>
+      <Dashboard />
+    </ToastProvider>
   );
 }

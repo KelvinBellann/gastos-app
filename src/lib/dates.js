@@ -1,4 +1,4 @@
-// Datas no formato "YYYY-MM-DD" (colunas DATE do Supabase) sempre no fuso local.
+// Datas no formato "YYYY-MM-DD" sempre no fuso local.
 // new Date("YYYY-MM-DD") e toISOString() trabalham em UTC: no Brasil (UTC-3) isso
 // mostrava o dia anterior e, depois das 21h, gravava a data de amanha.
 

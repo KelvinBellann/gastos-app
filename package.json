@@ -5,13 +5,14 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "npx serve@14.2.4 out",
     "lint": "eslint",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "build:ios": "next build && node scripts/sync-ios-web.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.97.0",
+    "@phosphor-icons/react": "^2.1.10",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",

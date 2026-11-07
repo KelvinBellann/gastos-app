@@ -1,58 +1,32 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { useEffect, useMemo, useState } from "react";
+import { Scales } from "@phosphor-icons/react";
+import { listReceiptsWithItems } from "@/lib/localDb";
 import { normalizeProductName } from "@/lib/receiptParser";
+import { formatBRLFromCents, sumCents } from "@/lib/money";
+import { Card, CardHeader, EmptyState } from "./ui";
 
-function formatBRLFromCents(cents) {
-  const value = (cents || 0) / 100;
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-export default function StoreComparison({ userId, monthKey }) {
+export default function StoreComparison({ monthKey }) {
   const [receipts, setReceipts] = useState([]);
   const [items, setItems] = useState([]);
-  const [stores, setStores] = useState([]);
   const [selectedStores, setSelectedStores] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   async function loadData() {
-    setLoading(true);
     try {
-      // Os itens sao buscados abaixo pelos ids dos recibos; filtrar receipt_items por
-      // receipts(user_id) sem embed e invalido no PostgREST e retornava erro.
-      const receiptsRes = await supabase
-        .from("receipts")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("month_key", monthKey);
-
-      const receiptsData = receiptsRes.data || [];
-      const storeNames = [...new Set(receiptsData.map((r) => r.store_name))];
-      setReceipts(receiptsData);
-      setStores(storeNames);
-
-      // Forma funcional: o valor de selectedStores capturado aqui e o do render anterior.
-      // Mantem so as lojas que existem no mes novo; se nenhuma sobrar, seleciona a primeira.
+      const data = await listReceiptsWithItems(monthKey);
+      const storeNames = [...new Set(data.receipts.map((r) => r.store_name))];
+      setReceipts(data.receipts);
+      setItems(Object.values(data.itemsByReceipt).flat());
+      // Forma funcional: mantem as lojas que existem no mes novo; sem nenhuma, seleciona ate duas
       setSelectedStores((prev) => {
         const kept = prev.filter((s) => storeNames.includes(s));
-        return kept.length > 0 ? kept : storeNames.slice(0, 1);
+        return kept.length > 0 ? kept : storeNames.slice(0, 2);
       });
-
-      if (receiptsData.length > 0) {
-        const receiptIds = receiptsData.map((r) => r.id);
-        const { data: allItems } = await supabase
-          .from("receipt_items")
-          .select("*")
-          .in("receipt_id", receiptIds);
-
-        setItems(allItems || []);
-      } else {
-        // Mes sem recibo: sem limpar, os itens do mes anterior continuavam na comparacao
-        setItems([]);
-      }
-    } finally {
-      setLoading(false);
+      setError("");
+    } catch (e) {
+      setError(e.message);
     }
   }
 
@@ -61,227 +35,176 @@ export default function StoreComparison({ userId, monthKey }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recarrega so ao trocar de mes
   }, [monthKey]);
 
-  const comparisonData = useMemo(() => {
-    if (selectedStores.length === 0) return { products: [] };
+  const stores = useMemo(() => [...new Set(receipts.map((r) => r.store_name))], [receipts]);
+  const storeByReceipt = useMemo(() => Object.fromEntries(receipts.map((r) => [r.id, r.store_name])), [receipts]);
 
-    const receiptsByStore = {};
-    receipts.forEach((receipt) => {
-      if (selectedStores.includes(receipt.store_name)) {
-        if (!receiptsByStore[receipt.store_name]) {
-          receiptsByStore[receipt.store_name] = [];
-        }
-        receiptsByStore[receipt.store_name].push(receipt.id);
-      }
-    });
-
-    const productMap = {};
-
-    items.forEach((item) => {
-      const receiptId = item.receipt_id;
-      const receipt = receipts.find((r) => r.id === receiptId);
-
-      if (!receipt || !selectedStores.includes(receipt.store_name)) return;
-
-      const normalized = normalizeProductName(item.product_name);
-      if (!normalized) return;
-
-      if (!productMap[normalized]) {
-        productMap[normalized] = {};
-      }
-
-      if (!productMap[normalized][receipt.store_name]) {
-        productMap[normalized][receipt.store_name] = [];
-      }
-
-      productMap[normalized][receipt.store_name].push({
-        price: item.unit_price_cents,
-        total: item.total_price_cents,
-      });
-    });
-
-    const products = Object.entries(productMap)
-      .map(([name, storePrices]) => {
-        const avgsByStore = {};
-        let minPrice = Infinity;
+  const products = useMemo(() => {
+    const map = {};
+    for (const item of items) {
+      const store = storeByReceipt[item.receipt_id];
+      if (!store || !selectedStores.includes(store)) continue;
+      const name = normalizeProductName(item.product_name);
+      if (!name) continue;
+      ((map[name] ||= {})[store] ||= []).push(item.unit_price_cents);
+    }
+    return Object.entries(map)
+      .map(([name, byStore]) => {
+        const avg = {};
         let bestStore = "";
-
-        Object.entries(storePrices).forEach(([store, prices]) => {
-          const avg = Math.round(
-            prices.reduce((sum, p) => sum + p.price, 0) / prices.length
-          );
-          avgsByStore[store] = avg;
-          if (avg < minPrice) {
-            minPrice = avg;
+        let minPrice = Infinity;
+        for (const [store, prices] of Object.entries(byStore)) {
+          avg[store] = Math.round(prices.reduce((s, p) => s + p, 0) / prices.length);
+          if (avg[store] < minPrice) {
+            minPrice = avg[store];
             bestStore = store;
           }
-        });
-
-        return {
-          name,
-          storePrices: avgsByStore,
-          bestStore,
-          minPrice,
-        };
+        }
+        // So destaca o melhor preco quando o produto aparece em mais de uma loja
+        return { name, avg, bestStore: Object.keys(avg).length > 1 ? bestStore : "", stores: Object.keys(avg).length };
       })
-      .sort((a, b) => b.minPrice - a.minPrice);
+      .sort((a, b) => b.stores - a.stores || a.name.localeCompare(b.name, "pt-BR"));
+  }, [items, storeByReceipt, selectedStores]);
 
-    return { products };
-  }, [selectedStores, receipts, items]);
-
-  const storeStats = useMemo(() => {
-    const stats = {};
-    selectedStores.forEach((store) => {
-      const storeReceipts = receipts.filter((r) => r.store_name === store);
-      const totalItems = items.filter((item) => {
-        const receipt = receipts.find((r) => r.id === item.receipt_id);
-        return receipt && receipt.store_name === store;
-      });
-
-      const total = totalItems.reduce((sum, item) => sum + item.total_price_cents, 0);
-      stats[store] = {
-        receipts: storeReceipts.length,
-        items: totalItems.length,
-        total,
+  const storeTotals = useMemo(() => {
+    const totals = {};
+    for (const store of selectedStores) {
+      const ids = new Set(receipts.filter((r) => r.store_name === store).map((r) => r.id));
+      totals[store] = {
+        receipts: ids.size,
+        total: sumCents(items.filter((i) => ids.has(i.receipt_id)), "total_price_cents"),
       };
-    });
-    return stats;
+    }
+    return totals;
   }, [selectedStores, receipts, items]);
 
-  if (loading) {
-    return <div className="text-center py-8 text-stone-500">Carregando...</div>;
+  function toggleStore(store) {
+    setSelectedStores((prev) => (prev.includes(store) ? prev.filter((s) => s !== store) : [...prev, store]));
+  }
+
+  if (error) {
+    return <p role="alert" className="text-sm text-negative">{error}</p>;
   }
 
   if (stores.length === 0) {
     return (
-      <div className="bg-white rounded-2xl border border-stone-100 p-8 text-center">
-        <p className="text-stone-500">Nenhum recibo para comparar</p>
-        <p className="text-xs text-stone-400 mt-2">
-          Envie recibos na aba anterior para ver comparações
-        </p>
-      </div>
+      <Card>
+        <EmptyState icon={Scales} title="Nada para comparar neste mês">
+          A comparação usa os itens dos recibos. Leia notas de pelo menos duas lojas na aba Recibos.
+        </EmptyState>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-stone-100 p-4">
-        <h3 className="font-bold text-stone-900 mb-3">🏪 Selecione as lojas</h3>
-        <div className="flex flex-wrap gap-2">
-          {stores.map((store) => (
-            <button
-              key={store}
-              onClick={() => {
-                if (selectedStores.includes(store)) {
-                  setSelectedStores(
-                    selectedStores.filter((s) => s !== store)
-                  );
-                } else {
-                  setSelectedStores([...selectedStores, store]);
-                }
-              }}
-              className={`px-3 py-2 rounded-lg font-medium text-sm transition ${
-                selectedStores.includes(store)
-                  ? "bg-[#3D3D3D] text-white"
-                  : "bg-stone-100 text-stone-600 hover:bg-stone-200"
-              }`}
-            >
-              {store}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {selectedStores.length > 0 && (
-        <>
-          <div className="grid gap-2">
-            {selectedStores.map((store) => (
-              <div
+      <Card aria-labelledby="comparar-lojas-titulo">
+        <CardHeader
+          id="comparar-lojas-titulo"
+          title="Lojas na comparação"
+          description="Preço unitário médio de cada produto nas compras do mês."
+        />
+        <div role="group" aria-label="Lojas" className="flex flex-wrap gap-1.5">
+          {stores.map((store) => {
+            const on = selectedStores.includes(store);
+            return (
+              <button
                 key={store}
-                className="bg-stone-50 border border-stone-200 rounded-lg p-3"
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggleStore(store)}
+                className={`h-9 max-w-full truncate rounded-full px-3.5 text-[13px] font-medium transition-[background-color,color] duration-150 ${
+                  on ? "bg-ink text-canvas" : "bg-surface-2 text-body hover:text-ink"
+                }`}
               >
-                <p className="text-sm font-bold text-stone-900">{store}</p>
-                <div className="flex justify-between text-xs text-stone-600 mt-1">
-                  <span>{storeStats[store]?.receipts || 0} recibos</span>
-                  <span>
-                    {formatBRLFromCents(storeStats[store]?.total || 0)} total
+                {store}
+              </button>
+            );
+          })}
+        </div>
+
+        {selectedStores.length > 0 && (
+          <dl className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {selectedStores.map((store) => (
+              <div key={store} className="rounded-xl bg-surface-2 px-3 py-2.5">
+                <dt className="truncate text-[13px] text-body">{store}</dt>
+                <dd className="num mt-0.5 flex items-baseline justify-between gap-2">
+                  <span className="text-base font-semibold text-ink">{formatBRLFromCents(storeTotals[store]?.total)}</span>
+                  <span className="text-xs text-mute">
+                    {storeTotals[store]?.receipts} {storeTotals[store]?.receipts === 1 ? "recibo" : "recibos"}
                   </span>
-                </div>
+                </dd>
               </div>
             ))}
+          </dl>
+        )}
+      </Card>
+
+      {selectedStores.length === 0 ? (
+        <p className="text-sm text-mute">Selecione ao menos uma loja.</p>
+      ) : (
+        <Card aria-labelledby="comparar-precos-titulo" flush className="overflow-hidden">
+          <div className="p-4 pb-0 sm:p-5 sm:pb-0">
+            <CardHeader
+              id="comparar-precos-titulo"
+              title="Preços"
+              description={`${products.length} ${products.length === 1 ? "produto" : "produtos"}. O menor preço aparece destacado.`}
+            />
           </div>
-
-          {comparisonData.products.length > 0 ? (
-            <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
-              <div className="p-4 border-b border-stone-200">
-                <h3 className="font-bold text-stone-900">
-                  📊 Comparação de Preços ({comparisonData.products.length}{" "}
-                  produtos)
-                </h3>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-stone-50 border-b border-stone-200">
-                      <th className="text-left p-3 font-bold text-stone-900">
-                        Produto
-                      </th>
-                      {selectedStores.map((store) => (
-                        <th
-                          key={store}
-                          className="text-right p-3 font-bold text-stone-900 whitespace-nowrap"
-                        >
-                          {store}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {comparisonData.products.map((product) => (
-                      <tr
-                        key={product.name}
-                        className="border-b border-stone-100 hover:bg-stone-50 transition"
-                      >
-                        <td className="p-3 text-stone-900 font-medium">
-                          {product.name}
-                        </td>
-                        {selectedStores.map((store) => {
-                          const price = product.storePrices[store];
-                          const isBest =
-                            product.bestStore === store && price !== undefined;
-                          return (
-                            <td
-                              key={store}
-                              className={`p-3 text-right font-bold whitespace-nowrap ${
-                                isBest ? "bg-green-50 text-green-700" : ""
-                              }`}
-                            >
-                              {price !== undefined
-                                ? formatBRLFromCents(price)
-                                : "—"}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="p-4 bg-stone-50 border-t border-stone-200">
-                <p className="text-xs text-stone-600">
-                  🟢 Melhor preço | Preços unitários: média das compras do mês em cada loja
-                </p>
-              </div>
+          {products.length === 0 ? (
+            <div className="p-4 sm:p-5">
+              <EmptyState title="Nenhum produto nos recibos dessas lojas" />
             </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-stone-100 p-8 text-center">
-              <p className="text-stone-500 text-sm">
-                Nenhum produto encontrado para comparar
-              </p>
+            <div className="relative overflow-x-auto" role="region" aria-label="Tabela de preços" tabIndex={0}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-y border-line bg-surface-2 text-xs text-mute">
+                    <th scope="col" className="sticky left-0 bg-surface-2 px-4 py-2.5 text-left font-medium sm:px-5">
+                      Produto
+                    </th>
+                    {selectedStores.map((store) => (
+                      <th key={store} scope="col" className="max-w-40 truncate px-4 py-2.5 text-right font-medium">
+                        {store}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {products.map((p) => (
+                    <tr key={p.name}>
+                      <th
+                        scope="row"
+                        className="sticky left-0 max-w-[12rem] truncate bg-surface px-4 py-2.5 text-left font-medium capitalize text-ink sm:px-5"
+                      >
+                        {p.name}
+                      </th>
+                      {selectedStores.map((store) => {
+                        const price = p.avg[store];
+                        const best = p.bestStore === store;
+                        return (
+                          <td key={store} className="num whitespace-nowrap px-4 py-2.5 text-right">
+                            {price === undefined ? (
+                              <span className="text-mute" aria-label="sem registro">
+                                -
+                              </span>
+                            ) : (
+                              <span
+                                className={best ? "rounded-full bg-primary-pale px-2 py-0.5 font-semibold text-primary-ink" : "text-ink"}
+                              >
+                                {formatBRLFromCents(price)}
+                                {best && <span className="sr-only"> (menor preço)</span>}
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
-        </>
+        </Card>
       )}
     </div>
   );

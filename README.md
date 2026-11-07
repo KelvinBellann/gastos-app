@@ -1,62 +1,91 @@
 # Controle de Gastos
 
-App pessoal de controle de receitas e despesas por mes, com leitura de notas fiscais por OCR e comparacao de precos entre lojas.
+App pessoal de receitas e despesas por mês, com leitura de nota fiscal por OCR e comparação de preços entre lojas. Roda 100% local: sem servidor, sem conta e sem banco externo.
 
-Stack: Next.js 16 (App Router, React Compiler), React 19, Supabase (auth + Postgres com RLS), Tailwind 4, tesseract.js 7, Jest 29.
+Stack: Next.js 16 (App Router, React Compiler), React 19, Tailwind 4, Phosphor Icons, tesseract.js 7, Jest 29.
 
-## Pre-requisitos
+## Onde ficam os dados
 
-- Node 24 e npm 11 (versoes usadas na validacao de 2026-09-28)
-- Projeto no Supabase com autenticacao por email/senha habilitada
+- Tudo fica no `localStorage` do navegador, na chave `gastos-app:db:v1`, com as tabelas `incomes`, `expenses`, `variable_incomes`, `receipts`, `receipt_items`, `plan_settings`, `plan_months` e `plan_contributions`.
+- Cada navegador e cada aparelho tem a sua cópia. Abrir o app no celular não mostra o que foi lançado no computador.
+- Limpar os dados do site no navegador apaga tudo. Por isso o topo do app tem dois botões:
+  - **Exportar backup**: baixa `gastos-backup-AAAA-MM-DD.json` com todas as tabelas.
+  - **Importar backup**: substitui os dados deste navegador pelos do arquivo, depois de confirmar. Arquivo de outro formato é recusado sem apagar nada.
+- A leitura da nota (OCR) roda no próprio navegador. A imagem não é gravada, só o texto lido e os itens.
 
-## Configuracao
+## Rodar
 
-1. Instalar dependencias:
+Pré-requisito: Node 24 e npm 11.
 
 ```bash
 npm install
+npm run dev      # http://localhost:3000
+npm run build    # site estatico em out/ (output: "export")
+npm run start    # serve out/ em http://localhost:3000
+npm run build:ios  # build + copia out/ para o app iOS em ios/
+npm run lint
+npm test
 ```
 
-2. Criar `.env.local` na raiz (o arquivo e ignorado pelo git):
+Não há variável de ambiente. O `.env.local` antigo (Supabase) não é mais usado.
 
-```
-NEXT_PUBLIC_SUPABASE_URL=https://<projeto>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
-```
+## App iOS
 
-3. Criar o schema no SQL Editor do Supabase, nesta ordem:
+`ios/` é um app nativo que abre o site de `out/` num `WKWebView`, compilado e instalado no iPhone com [xtool](https://xtool.sh) a partir do Windows (via WSL), sem Mac nem Xcode. Os dados ficam no próprio iPhone. O passo a passo está em [ios/README.md](ios/README.md).
 
-| Ordem | Arquivo | O que cria |
-|---|---|---|
-| 1 | `SUPABASE_SETUP.sql` | tabelas `incomes`, `expenses`, `variable_incomes`, indices, RLS, trigger de `updated_at` |
-| 2 | `PAYMENT_CONTROL_MIGRATION.sql` | colunas `payment_method`, `installments`, `is_paid`, `paid_date`, `notes` em `expenses` |
-| 3 | `INSTALLMENT_MONTH_MIGRATION.sql` | colunas `installment_month` e `installment_number` em `expenses` |
-| 4 | `supabase/migrations/001_create_receipts_tables.sql` | tabelas `receipts`, `receipt_items`, `store_products` (aba Recibos e Comparar) |
+## Como o app funciona
 
-Observacoes:
-- `ADD_PAYMENT_COLUMNS.sql` e um subconjunto do passo 2 (sem a coluna `notes`). Nao precisa rodar se o passo 2 foi executado.
-- `supabase/migrations/002_create_incomes_table.sql` e `003_create_variable_incomes_table.sql` recriam tabelas que o passo 1 ja cria, com tipos diferentes (INTEGER em vez de BIGINT). Nao rodar depois do passo 1.
-- `SUPABASE_SETUP.sql` nao e idempotente (`CREATE POLICY` e `CREATE TRIGGER` sem guarda). Rodar uma unica vez.
+| Situação | Comportamento |
+|---|---|
+| Gasto fixo | Um registro que aparece em todos os meses e conta como pago |
+| Débito ou Pix | Um registro no mês, pago ou pendente, com data de pagamento opcional |
+| Crédito em N parcelas | N registros "Descrição (i/N)"; a parcela i vence i meses depois da compra. Todos contam também no mês da compra (regra herdada, ver dívida abaixo) |
+| Lançamentos iguais no mesmo dia | Somados numa linha "2x"; editar e excluir valem para cada registro do grupo |
+| Excluir | Imediato, com "Desfazer" por 6 segundos |
+| Receitas | 4 fixas por mês (salário, multibenefícios, alimentação, salário esposa) e variáveis com período; ambas entram no saldo |
+| Filtro de período | Hoje, 7 dias, 30 dias ou Todos; o resumo de gastos acompanha o filtro |
+| Mês e aba | Ficam na URL (`?mes=2026-10&aba=recibos`) |
 
-## Comandos
+## Aba Plano
 
-```bash
-npm run dev      # servidor de desenvolvimento em http://localhost:3000
-npm run build    # build de producao (roda o React Compiler)
-npm run start    # serve o build
-npm run lint     # eslint (eslint-config-next, regras do React Compiler)
-npm test         # jest
-npm run test:watch
-```
+Divide a renda do casal todo mês entre essenciais, lazer e futuro, e acompanha a reserva de emergência e a meta de viver de renda.
+
+| Regra | Como funciona |
+|---|---|
+| Renda para dividir | Seu salário + salário da esposa + receitas variáveis do mês |
+| Benefícios | Multibenefícios e alimentação ficam fora da divisão e abatem os gastos de mercado e lanches |
+| Essenciais primeiro | Valor fixo definido em Ajustes do plano (padrão 50% da renda base até ser definido); não cai em mês fraco |
+| Sobra | Dividida entre lazer e futuro, padrão 60/40 (a proporção 30/20) |
+| Receitas variáveis | Opcional: vão inteiras para o futuro |
+| Futuro | Enche a reserva até o alvo e só depois vai para investimentos |
+| Reserva | 6 meses de essenciais (ajustável) |
+| Viver de renda | Custo de vida (essenciais + lazer médio) dividido pelo rendimento real ao mês (padrão 0,4%, multiplicador 250) |
+| Proporção do casal | Mostra quanto cada um representa na renda e a parte de cada um nos essenciais |
+
+Fluxo do mês:
+1. Conferir os salários do mês.
+2. "Fechar o mês" grava a sugestão, ou "Ajustar" para mudar essenciais e lazer antes de fechar.
+3. Registrar os aportes feitos (ou "Registrar o que falta") e retiradas da reserva quando houver.
+4. Acompanhar quanto já saiu de essenciais e lazer. Aqui o crédito conta no mês da parcela, não no mês da compra.
+
+Previsões usam a média do futuro dos últimos 3 meses fechados. A reserva é tratada como dinheiro parado, sem rendimento.
 
 ## Estrutura
 
-- `src/app/page.js`: verifica a sessao e alterna entre `LoginPage` e `Dashboard`
-- `src/components/Dashboard.js`: mes, receitas, novo gasto, lista agrupada, abas Recibos e Comparar
-- `src/components/IncomesManager.js`: receitas fixas e variaveis
-- `src/components/ReceiptsTab.js` e `ReceiptUpload.js`: recibos e OCR
-- `src/components/StoreComparison.js`: comparacao de precos por produto entre lojas
-- `src/lib/receiptOCR.js` e `receiptParser.js`: extracao e parse do texto da nota
-- `src/lib/supabaseClient.js`: cliente Supabase
+- `src/app/page.js`: renderiza o painel só no navegador, onde vivem os dados
+- `src/components/Dashboard.js`: cabeçalho, mês, abas, backup e resumo
+- `src/components/ExpenseForm.js`, `ExpenseList.js`, `CategoryBreakdown.js`: novo gasto, lançamentos e totais por categoria
+- `src/components/IncomesManager.js`: receitas fixas e variáveis
+- `src/components/PlanTab.js`, `PlanContributions.js`, `PlanSettings.js`: aba Plano
+- `src/components/ReceiptsTab.js`, `ReceiptUpload.js`, `StoreComparison.js`: recibos, leitura da nota e comparação de preços
+- `src/components/ui.js`: botões, campos, cartões, avisos e toast
+- `src/lib/localDb.js`: banco local, desfazer, exportar e importar
+- `src/lib/expenses.js`: parcelas, períodos, filtro e agrupamento
+- `src/lib/plan.js`: divisão do mês, gasto real por pote, metas e previsões
+- `src/lib/receiptOCR.js`, `receiptParser.js`: leitura e interpretação da nota
+- `src/app/globals.css`: tokens de cor dos temas claro e escuro
 
-Guias de uso: `EXPENSE_INPUT_GUIDE.md`, `PAYMENT_CONTROL_GUIDE.md`, `INSTALLMENT_GUIDE.md`. Testes: `TESTING.md`.
+## Dívida conhecida
+
+- Na aba Gastos, parcelas de crédito somam no mês da compra e de novo no mês de vencimento. Mudar isso é decisão de produto, não correção. A aba Plano já conta só no mês da parcela.
+- Os dados ficam em um navegador só. Para usar em dois aparelhos, escolha um como oficial e use exportar e importar backup.

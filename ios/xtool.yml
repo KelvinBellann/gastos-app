@@ -1,0 +1,4 @@
+version: 1
+bundleID: com.kelvinbellan.gastos
+product: GastosApp
+infoPath: GastosApp-Info.plist

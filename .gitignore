@@ -43,3 +43,9 @@ next-env.d.ts
 
 # swc cache
 /.swc/
+
+# app iOS (xtool): site copiado por `npm run build:ios` e saidas de build
+/ios/Sources/GastosApp/Web/
+/ios/.build/
+/ios/xtool/
+/ios/.swiftpm/

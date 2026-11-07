@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>Gastos</string>
+    <key>NSCameraUsageDescription</key>
+    <string>A câmera é usada para fotografar cupons fiscais e ler os itens da compra.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>As fotos são usadas para importar imagens de cupons fiscais.</string>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+    </array>
+</dict>
+</plist>

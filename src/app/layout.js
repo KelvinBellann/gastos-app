@@ -12,26 +12,25 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Controle de Gastos",
-  description: "Gerencie suas receitas e despesas com estilo",
+  title: "Gastos",
+  description: "Controle de receitas e despesas por mês, com os dados guardados no próprio aparelho.",
 };
 
-export function generateViewport() {
-  return {
-    width: "device-width",
-    initialScale: 1.0,
-    maximumScale: 1.0,
-    userScalable: false,
-    viewportFit: "cover",
-  };
-}
+// Sem maximumScale/userScalable: bloquear o zoom impede quem precisa ampliar a tela (WCAG 1.4.4)
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#eceee9" },
+    { media: "(prefers-color-scheme: dark)", color: "#0c0e0b" },
+  ],
+};
 
 export default function RootLayout({ children }) {
   return (
     <html lang="pt-BR">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}>
         {children}
       </body>
     </html>

@@ -1,923 +1,383 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import { todayISO, parseISODate, formatDatePT } from "@/lib/dates";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CaretLeft,
+  CaretRight,
+  ChartBar,
+  DownloadSimple,
+  Receipt,
+  Target,
+  UploadSimple,
+  Wallet,
+} from "@phosphor-icons/react";
+import {
+  countRows,
+  exportBackup,
+  getOrCreateIncome,
+  importBackup,
+  listExpensesForMonth,
+  updateIncome,
+} from "@/lib/localDb";
+import { todayISO } from "@/lib/dates";
+import { addMonths, filterExpenses, isValidMonthKey, monthLabel, toMonthKey, FILTERS } from "@/lib/expenses";
+import { formatBRLFromCents, sumCents } from "@/lib/money";
+import { Banner, IconButton, useToast } from "./ui";
+import ExpenseForm from "./ExpenseForm";
+import ExpenseList from "./ExpenseList";
+import CategoryBreakdown from "./CategoryBreakdown";
+import IncomesManager from "./IncomesManager";
+import PlanTab from "./PlanTab";
 import ReceiptsTab from "./ReceiptsTab";
 import StoreComparison from "./StoreComparison";
-import MoneyInput from "./MoneyInput";
-import IncomesManager from "./IncomesManager";
 
-function toMonthKey(date = new Date()) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
-}
-
-function monthLabel(monthKey) {
-  const [y, m] = monthKey.split("-").map(Number);
-  const date = new Date(y, m - 1, 1);
-  return date.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-}
-
-function formatBRLFromCents(cents) {
-  const value = (cents || 0) / 100;
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function parseBRLToCents(input) {
-  // Todos os pontos de milhar saem (1.234.567,89); replace com string so tirava o primeiro
-  const clean = String(input).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
-  const num = Number(clean);
-  if (Number.isNaN(num)) return null;
-  return Math.round(num * 100);
-}
-
-function getDaysSinceToday(dateStr) {
-  const date = parseISODate(dateStr);
-  if (!date) return Infinity;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  // round, nao floor: a diferenca nao e multiplo exato de 24h nos dias de troca de horario de verao
-  return Math.round((today - date) / (1000 * 60 * 60 * 24));
-}
-
-function splitInstallments(totalCents, count) {
-  // floor com o resto nas primeiras parcelas: com ceil a ultima parcela ficava negativa
-  // em valores pequenos (1 centavo em 12x dava -10 na ultima)
-  const base = Math.floor(totalCents / count);
-  const remainder = totalCents - base * count;
-  return Array.from({ length: count }, (_, i) => base + (i < remainder ? 1 : 0));
-}
-
-function getPeriodLabel(dateStr) {
-  const days = getDaysSinceToday(dateStr);
-  if (days === 0) return "Hoje";
-  if (days === 1) return "Ontem";
-  if (days <= 7) return "Esta semana";
-  return "Mês anterior";
-}
-
-const DEFAULT_INCOME = {
-  salary_net_cents: 0,
-  multibenefits_cents: 0,
-  food_cents: 0,
-  spouse_salary_cents: 0,
-};
-
-const CATEGORIES = [
-  { value: "fixos", label: "Fixos", icon: "🏠", color: "bg-slate-100 text-slate-700 border-slate-200" },
-  { value: "mercado", label: "Mercado", icon: "🛒", color: "bg-stone-100 text-stone-700 border-stone-200" },
-  { value: "aleatorios", label: "Aleatórios", icon: "❓", color: "bg-zinc-100 text-zinc-700 border-zinc-200" },
-  { value: "emprestado", label: "Emprestado", icon: "🤝", color: "bg-neutral-100 text-neutral-700 border-neutral-200" },
-  { value: "gatos", label: "Gatos", icon: "🐱", color: "bg-rose-50 text-rose-700 border-rose-100" },
-  { value: "lanches", label: "Lanches", icon: "🍔", color: "bg-amber-50 text-amber-700 border-amber-100" },
-  { value: "dinheiro", label: "Dinheiro", icon: "💵", color: "bg-gray-100 text-gray-600 border-gray-200" },
-  { value: "carro", label: "Carro", icon: "🚗", color: "bg-slate-100 text-slate-700 border-slate-200" },
-  { value: "farmacia", label: "Farmácia", icon: "💊", color: "bg-rose-50 text-rose-600 border-rose-100" },
+const TABS = [
+  { id: "gastos", label: "Gastos", Icon: Wallet },
+  { id: "plano", label: "Plano", Icon: Target },
+  { id: "recibos", label: "Recibos", Icon: Receipt },
+  { id: "comparar", label: "Comparar", Icon: ChartBar },
 ];
 
-const CATEGORY_MAP = Object.fromEntries(CATEGORIES.map((c) => [c.value, c]));
+const INCOME_FIELDS = ["salary_net_cents", "multibenefits_cents", "food_cents", "spouse_salary_cents"];
+const NOTICE_KEY = "gastos-app:aviso-dados-locais";
 
-export default function Dashboard({ session, onSignOut }) {
-  const userId = session.user.id;
-  const [monthKey, setMonthKey] = useState(toMonthKey());
+// Mes e aba ficam na URL (?mes=2026-10&aba=recibos): recarregar ou salvar o link volta ao mesmo lugar
+function readUrlState() {
+  const params = new URLSearchParams(window.location.search);
+  const mes = params.get("mes");
+  const aba = params.get("aba");
+  return {
+    monthKey: isValidMonthKey(mes) ? mes : toMonthKey(),
+    tab: TABS.some((t) => t.id === aba) ? aba : "gastos",
+  };
+}
+
+function readNoticeDismissed() {
+  try {
+    return window.localStorage.getItem(NOTICE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export default function Dashboard() {
+  const toast = useToast();
+  const [initial] = useState(readUrlState);
+  const [monthKey, setMonthKey] = useState(initial.monthKey);
+  const [activeTab, setActiveTab] = useState(initial.tab);
+  const [dataVersion, setDataVersion] = useState(0);
   const [income, setIncome] = useState(null);
   const [expenses, setExpenses] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [filter, setFilter] = useState("todos");
-  const [activeTab, setActiveTab] = useState("gastos");
-
-  const [category, setCategory] = useState("fixos");
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
-  const [editingId, setEditingId] = useState(null);
-  const [editAmount, setEditAmount] = useState("");
-  const [expandedGroups, setExpandedGroups] = useState(new Set());
-  const [paymentMethod, setPaymentMethod] = useState("debit");
-  const [installments, setInstallments] = useState(1);
-  const [isPaid, setIsPaid] = useState(false);
-  const [paidDate, setPaidDate] = useState(todayISO());
   const [variableIncomeTotal, setVariableIncomeTotal] = useState(0);
+  const [filter, setFilter] = useState("todos");
+  const [err, setErr] = useState("");
+  const [noticeDismissed, setNoticeDismissed] = useState(readNoticeDismissed);
+  const importInputRef = useRef(null);
+  const tabRefs = useRef({});
 
-  const filteredExpenses = useMemo(() => {
-    if (filter === "todos") return expenses;
-
-    let maxDays;
-    if (filter === "hoje") maxDays = 0;
-    else if (filter === "semana") maxDays = 7;
-    else if (filter === "mes") maxDays = 30;
-    else return expenses;
-
-    return expenses.filter((e) => {
-      const days = getDaysSinceToday(e.date);
-      return days >= 0 && days <= maxDays;
-    });
-  }, [expenses, filter]);
-
-  const groupedExpenses = useMemo(() => {
-    const PERIODS = ["Hoje", "Ontem", "Esta semana", "Mês anterior"];
-    const grouped = {};
-
-    // Agrupar por período e depois combinar gastos iguais
-    filteredExpenses.forEach((e) => {
-      const period = getPeriodLabel(e.date);
-      if (!grouped[period]) grouped[period] = {};
-
-      // Chave única: descrição + categoria + data (para combinar duplicatas)
-      const key = `${e.description}|${e.category}|${e.date}`;
-
-      if (!grouped[period][key]) {
-        // Primeiro gasto dessa descrição nesse dia
-        grouped[period][key] = {
-          ...e,
-          count: 1,
-          items: [e], // Manter referência aos itens originais
-        };
-      } else {
-        // Gasto duplicado - somar valor, incrementar contador e adicionar ao array
-        grouped[period][key].amount_cents += e.amount_cents;
-        grouped[period][key].count += 1;
-        grouped[period][key].items.push(e);
-      }
-    });
-
-    // Converter de volta para array
-    return PERIODS.filter((p) => grouped[p] && Object.keys(grouped[p]).length > 0).map((p) => ({
-      period: p,
-      items: Object.values(grouped[p]),
-    }));
-  }, [filteredExpenses]);
-
-  const totals = useMemo(() => {
-    // Inclui as variaveis: o card Saldo e o "Total de Receitas" do IncomesManager divergiam
-    const incomeTotal =
-      (income?.salary_net_cents || 0) +
-      (income?.multibenefits_cents || 0) +
-      (income?.food_cents || 0) +
-      (income?.spouse_salary_cents || 0) +
-      variableIncomeTotal;
-
-    const byCategory = filteredExpenses.reduce((acc, e) => {
-      acc[e.category] = (acc[e.category] || 0) + e.amount_cents;
-      return acc;
-    }, {});
-
-    const expensesTotal = filteredExpenses.reduce((s, e) => s + e.amount_cents, 0);
-    const balance = incomeTotal - expensesTotal;
-
-    return { incomeTotal, expensesTotal, balance, byCategory };
-  }, [income, variableIncomeTotal, filteredExpenses]);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("mes", monthKey);
+    url.searchParams.set("aba", activeTab);
+    window.history.replaceState(null, "", url);
+  }, [monthKey, activeTab]);
 
   async function loadExpenses() {
-    // Carregar gastos que aparecem neste mês:
-    // 1. Gastos do mês atual
-    // 2. Parcelas de crédito que vencem neste mês
-    // 3. Gastos fixos (aparecem em todos os meses)
-    const expRes = await supabase
-      .from("expenses")
-      .select("*")
-      .eq("user_id", userId)
-      .or(`month_key.eq.${monthKey},installment_month.eq.${monthKey},category.eq.fixos`)
-      .order("created_at", { ascending: false });
-
-    if (expRes.error) setErr(expRes.error.message);
-    else {
-      // Se estamos em um mês diferente de quando o gasto fixo foi criado,
-      // precisamos ajustar o month_key para este mês na visualização
-      const adjustedExpenses = expRes.data?.map((e) => ({
-        ...e,
-        display_month_key: e.category === "fixos" ? monthKey : e.month_key,
-      })) || [];
-      setExpenses(adjustedExpenses);
+    try {
+      setExpenses(await listExpensesForMonth(monthKey));
+    } catch (e) {
+      setErr(e.message);
     }
   }
 
-  async function load() {
-    setBusy(true);
-    setErr("");
-
-    // loadExpenses e a unica fonte da lista: a query por month_key puro deixava de fora
-    // parcelas de credito e gastos fixos de outros meses ate o proximo add/edit/delete.
-    const [incRes] = await Promise.all([
-      supabase.from("incomes").select("*").eq("user_id", userId).eq("month_key", monthKey).maybeSingle(),
-      loadExpenses(),
-    ]);
-
-    if (incRes.error) {
-      setErr(incRes.error.message);
-      setBusy(false);
-      return;
+  async function loadMonth() {
+    try {
+      const [inc, exp] = await Promise.all([getOrCreateIncome(monthKey), listExpensesForMonth(monthKey)]);
+      setIncome(inc);
+      setExpenses(exp);
+      setErr("");
+    } catch (e) {
+      setErr(e.message);
     }
-
-    if (!incRes.data) {
-      const ins = await supabase
-        .from("incomes")
-        .insert({ user_id: userId, month_key: monthKey, ...DEFAULT_INCOME })
-        .select("*")
-        .single();
-
-      if (ins.error) {
-        setErr(ins.error.message);
-        setBusy(false);
-        return;
-      }
-      setIncome(ins.data);
-    } else {
-      setIncome(incRes.data);
-    }
-
-    setBusy(false);
   }
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthKey]);
+    loadMonth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarrega ao trocar de mes ou importar backup
+  }, [monthKey, dataVersion]);
 
-  async function addExpense() {
-    setErr("");
-    setSuccessMsg("");
+  const filteredExpenses = useMemo(() => filterExpenses(expenses, filter), [expenses, filter]);
 
-    // Validação de descrição
-    if (!description.trim()) {
-      setErr("⚠️ Digite o que foi gasto (ex: Almoço, Gasolina)");
-      return;
+  const totals = useMemo(() => {
+    // Inclui as variaveis: o Saldo precisa bater com o "Total de receitas" do IncomesManager
+    const fixedTotal = INCOME_FIELDS.reduce((s, f) => s + (income?.[f] || 0), 0);
+    const incomeTotal = fixedTotal + variableIncomeTotal;
+    const expensesTotal = sumCents(filteredExpenses);
+    return { incomeTotal, expensesTotal, balance: incomeTotal - expensesTotal };
+  }, [income, variableIncomeTotal, filteredExpenses]);
+
+  async function handleIncomeChange(updated) {
+    if (!income) return;
+    const patch = {};
+    for (const key of INCOME_FIELDS) {
+      const next = Number(updated[key]) || 0;
+      if (next !== income[key]) patch[key] = next;
     }
-
-    // Validação de valor
-    const cents = Number(amount);
-    if (isNaN(cents) || cents === 0 || cents < 0) {
-      setErr("⚠️ Digite um valor válido (ex: 50 para R$ 50,00)");
-      return;
-    }
-
-    setBusy(true);
+    if (Object.keys(patch).length === 0) return;
+    const previous = income;
+    setIncome({ ...income, ...patch });
     try {
-      // Para FIXOS, não precisa de controle de pagamento
-      const expenseEntries = [];
+      await updateIncome(income.id, patch);
+    } catch (e) {
+      setIncome(previous);
+      setErr(`Não foi possível salvar a receita: ${e.message}`);
+    }
+  }
 
-      if (category === "fixos") {
-        // Gasto fixo - simples, aparece todos os meses
-        expenseEntries.push({
-          user_id: userId,
-          month_key: monthKey,
-          category,
-          description: description.trim(),
-          amount_cents: cents,
-          date: todayISO(),
-          payment_method: "fixed", // Marca como fixo
-          installments: 1,
-          installment_number: 1,
-          installment_month: monthKey,
-          is_paid: true, // Fixos sempre contam como "pago"
-          paid_date: null,
-        });
-      } else if (paymentMethod === "credit") {
-        // Para crédito, criar múltiplos registros (um por parcela)
-        const installmentCount = parseInt(installments);
-        const installmentAmounts = splitInstallments(cents, installmentCount);
-
-        for (let i = 0; i < installmentCount; i++) {
-          const [year, month] = monthKey.split("-");
-          const installmentMonth = parseInt(month) + i + 1;
-          const installmentYear = installmentMonth > 12 ? parseInt(year) + 1 : year;
-          const installmentMonthPad = (installmentMonth % 12 || 12);
-
-          expenseEntries.push({
-            user_id: userId,
-            month_key: monthKey,
-            category,
-            description: `${description.trim()} (${i + 1}/${installmentCount})`,
-            amount_cents: installmentAmounts[i],
-            date: todayISO(),
-            payment_method: paymentMethod,
-            installments: installmentCount,
-            installment_number: i + 1,
-            installment_month: `${installmentYear}-${String(installmentMonthPad).padStart(2, "0")}`,
-            is_paid: false,
-            paid_date: null,
-          });
-        }
+  async function handleExport() {
+    try {
+      const backup = await exportBackup();
+      const filename = `gastos-backup-${todayISO()}.json`;
+      const json = JSON.stringify(backup, null, 2);
+      // No app iOS o WKWebView ignora <a download>; o lado nativo abre a folha de compartilhar
+      const nativeShare = window.webkit?.messageHandlers?.shareFile;
+      if (nativeShare) {
+        nativeShare.postMessage({ filename, content: json });
       } else {
-        // Débito/PIX aparecem no mês atual
-        expenseEntries.push({
-          user_id: userId,
-          month_key: monthKey,
-          category,
-          description: description.trim(),
-          amount_cents: cents,
-          date: todayISO(),
-          payment_method: paymentMethod,
-          installments: 1,
-          installment_number: 1,
-          installment_month: monthKey,
-          is_paid: isPaid,
-          paid_date: isPaid ? paidDate : null,
-        });
+        const blob = new Blob([json], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
       }
-
-      const { error } = await supabase
-        .from("expenses")
-        .insert(expenseEntries)
-        .select();
-
-      if (error) {
-        const errorMsg = error.message || JSON.stringify(error);
-        setErr(`❌ Erro ao salvar: ${errorMsg}`);
-        console.error("Supabase error details:", {
-          message: error.message,
-          code: error.code,
-          details: error.details,
-          hint: error.hint,
-          fullError: error,
-        });
-      } else {
-        setDescription("");
-        setAmount("");
-        setPaymentMethod("debit");
-        setInstallments(1);
-        setIsPaid(false);
-        setPaidDate(todayISO());
-        setSuccessMsg("✅ Gasto adicionado com sucesso!");
-        setTimeout(() => setSuccessMsg(""), 3000);
-        await loadExpenses();
-      }
-    } catch (err) {
-      setErr(`❌ Erro inesperado: ${err.message}`);
-      console.error("Exception details:", {
-        message: err.message,
-        stack: err.stack,
-        fullError: err,
-      });
-    } finally {
-      setBusy(false);
+      toast({ message: `Backup exportado com ${countRows(backup.data)} registros.` });
+    } catch (e) {
+      setErr(`Não foi possível exportar: ${e.message}`);
     }
   }
 
-  async function deleteExpense(id) {
-    if (!window.confirm("Tem certeza que deseja excluir este gasto?")) return;
-
-    setBusy(true);
-    setErr("");
+  async function handleImportFile(file) {
+    if (!file) return;
     try {
-      const { error } = await supabase.from("expenses").delete().eq("id", id);
-      if (error) setErr(error.message);
-      await loadExpenses();
+      const payload = JSON.parse(await file.text());
+      const incoming = countRows(payload?.data);
+      const current = countRows((await exportBackup()).data);
+      const ok = window.confirm(
+        `Importar este backup substitui os ${current} registros atuais deste navegador pelos ${incoming} do arquivo. Continuar?`
+      );
+      if (!ok) return;
+      const total = await importBackup(payload);
+      setDataVersion((v) => v + 1);
+      toast({ message: `Backup importado: ${total} registros.` });
+    } catch (e) {
+      setErr(e instanceof SyntaxError ? "O arquivo não é um JSON válido." : e.message);
     } finally {
-      setBusy(false);
+      if (importInputRef.current) importInputRef.current.value = "";
     }
   }
 
-  function startEdit(expense) {
-    setEditingId(expense.id);
-    setEditAmount(formatBRLFromCents(expense.amount_cents).replace("R$", "").trim());
-  }
-
-  async function saveEdit(id) {
-    const newCents = parseBRLToCents(editAmount);
-    if (newCents === null || newCents <= 0) {
-      setErr("Valor inválido.");
-      return;
-    }
-
-    setBusy(true);
-    setErr("");
+  function dismissNotice() {
+    setNoticeDismissed(true);
     try {
-      const { error } = await supabase
-        .from("expenses")
-        .update({ amount_cents: newCents })
-        .eq("id", id);
-      if (error) {
-        setErr(error.message);
-        return;
-      }
-      await loadExpenses();
-      setEditingId(null);
-      setEditAmount("");
-    } finally {
-      setBusy(false);
+      window.localStorage.setItem(NOTICE_KEY, "1");
+    } catch {
+      // Sem storage o aviso so volta no proximo carregamento; nada a fazer
     }
   }
 
-  function cancelEdit() {
-    setEditingId(null);
-    setEditAmount("");
+  function handleTabKeyDown(e, index) {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    e.preventDefault();
+    const next = TABS[(index + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
+    setActiveTab(next.id);
+    tabRefs.current[next.id]?.focus();
   }
 
-  async function updateIncomeField(field, cents) {
-    if (!income) {
-      setErr("Carregando dados de receitas...");
-      return;
-    }
-    const numCents = Number(cents);
-    if (!Number.isInteger(numCents) || numCents < 0) {
-      setErr("Valor inválido");
-      return;
-    }
-
-    setErr("");
-    const incomeId = income.id;
-    const previousValue = income[field];
-
-    setIncome(prev => ({ ...prev, [field]: numCents }));
-
-    try {
-      const { error } = await supabase
-        .from("incomes")
-        .update({ [field]: numCents })
-        .eq("id", incomeId);
-
-      if (error) {
-        setErr(`Erro ao salvar: ${error.message}`);
-        setIncome(prev => ({ ...prev, [field]: previousValue }));
-      } else {
-        setSuccessMsg("✓ Receita atualizada!");
-        setTimeout(() => setSuccessMsg(""), 2000);
-      }
-    } catch (err) {
-      setErr(`Erro ao salvar: ${err.message}`);
-      setIncome(prev => ({ ...prev, [field]: previousValue }));
-    }
-  }
+  const filterLabel = FILTERS.find((f) => f.value === filter)?.label;
 
   return (
-    <main className="min-h-screen bg-[#F5F0EB] flex flex-col">
-      {/* Header e abas num unico bloco sticky: as abas tinham top-16 sobrescrito por um
-          style inline com top: env(safe-area-inset-top) e ficavam por cima do header ao rolar */}
-      <div className="sticky top-0 z-10">
-      <header className="bg-[#2C2C2C] text-white" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="px-4 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold">💰 Gastos</h1>
-            <p className="text-stone-400 text-xs mt-0.5">
-              {monthLabel(monthKey)}
-            </p>
+    <div className="min-h-[100dvh]">
+      <a
+        href="#conteudo"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-xl focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-semibold"
+      >
+        Pular para o conteúdo
+      </a>
+
+      <header
+        className="sticky top-0 z-20 border-b border-line bg-canvas/90 backdrop-blur-md"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-on-primary" aria-hidden="true">
+              <Wallet size={18} weight="bold" />
+            </span>
+            <h1 className="text-lg font-semibold tracking-tight">Gastos</h1>
           </div>
-          <button
-            onClick={onSignOut}
-            className="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg transition text-sm font-medium"
-          >
-            Sair
-          </button>
+
+          <div className="order-3 flex w-full items-center gap-1 sm:order-none sm:w-auto">
+            <IconButton label="Mês anterior" onClick={() => setMonthKey((m) => addMonths(m, -1))}>
+              <CaretLeft size={18} aria-hidden="true" />
+            </IconButton>
+            <label htmlFor="mes" className="sr-only">
+              Mês
+            </label>
+            <input
+              id="mes"
+              name="mes"
+              type="month"
+              value={monthKey}
+              onChange={(e) => isValidMonthKey(e.target.value) && setMonthKey(e.target.value)}
+              className="h-9 flex-1 rounded-xl border border-line bg-surface px-3 text-sm font-medium sm:w-44 sm:flex-none"
+            />
+            <IconButton label="Próximo mês" onClick={() => setMonthKey((m) => addMonths(m, 1))}>
+              <CaretRight size={18} aria-hidden="true" />
+            </IconButton>
+          </div>
+
+          <div className="ml-auto flex items-center gap-1">
+            <IconButton label="Exportar backup" onClick={handleExport}>
+              <DownloadSimple size={18} aria-hidden="true" />
+            </IconButton>
+            <IconButton label="Importar backup" onClick={() => importInputRef.current?.click()}>
+              <UploadSimple size={18} aria-hidden="true" />
+            </IconButton>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => handleImportFile(e.target.files?.[0])}
+              aria-label="Arquivo de backup"
+            />
+          </div>
+        </div>
+
+        <div className="mx-auto max-w-5xl px-4 pb-3">
+          <div role="tablist" aria-label="Seções" className="inline-flex w-full gap-1 rounded-full bg-surface-2 p-1 sm:w-auto">
+            {TABS.map((tab, i) => {
+              const selected = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  ref={(el) => (tabRefs.current[tab.id] = el)}
+                  id={`aba-${tab.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  aria-controls={`painel-${tab.id}`}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => setActiveTab(tab.id)}
+                  onKeyDown={(e) => handleTabKeyDown(e, i)}
+                  className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full px-3 text-sm font-medium transition-[background-color,color] duration-150 sm:flex-none sm:px-4 ${
+                    selected ? "bg-ink text-canvas" : "text-body hover:text-ink"
+                  }`}
+                >
+                  <tab.Icon size={16} weight={selected ? "fill" : "regular"} aria-hidden="true" className="hidden min-[420px]:block" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </header>
 
-      {/* Tab Navigation */}
-      <div className="bg-white border-b border-stone-200 px-4 flex gap-2 overflow-x-auto">
-        {[
-          { id: "gastos", label: "💰 Gastos" },
-          { id: "recibos", label: "📸 Recibos" },
-          { id: "comparar", label: "📊 Comparar" },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-3 font-medium text-sm whitespace-nowrap border-b-2 transition ${
-              activeTab === tab.id
-                ? "border-[#3D3D3D] text-[#3D3D3D]"
-                : "border-transparent text-stone-600 hover:text-stone-900"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
-        {activeTab === "gastos" && (
-          <>
-            {/* Mês e Filtro */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-stone-200 p-4 space-y-3">
-          <div className="flex gap-2 items-center">
-            <label className="text-sm font-medium text-stone-700 whitespace-nowrap">Mês:</label>
-            <input
-              type="month"
-              value={monthKey}
-              onChange={(e) => setMonthKey(e.target.value)}
-              className="flex-1 border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
-            />
-          </div>
-
-          <div className="flex gap-2 flex-wrap">
-            {[
-              { value: "hoje", label: "Hoje" },
-              { value: "semana", label: "Semana" },
-              { value: "mes", label: "Mês" },
-              { value: "todos", label: "Todos" },
-            ].map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setFilter(opt.value)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                  filter === opt.value
-                    ? "bg-[#3D3D3D] text-white"
-                    : "bg-stone-100 text-stone-600 hover:bg-stone-200"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+      <main
+        id="conteudo"
+        className="mx-auto max-w-5xl px-4 pt-5"
+        style={{ paddingBottom: "calc(6rem + env(safe-area-inset-bottom))" }}
+      >
+        <div className="mb-4 space-y-3 empty:hidden">
+          {err && <Banner onDismiss={() => setErr("")}>{err}</Banner>}
+          {!noticeDismissed && (
+            <Banner tone="info" onDismiss={dismissNotice}>
+              Os dados ficam só neste navegador. Use o botão de exportar backup no topo para não perder nada ao trocar de
+              aparelho ou limpar o navegador.
+            </Banner>
+          )}
         </div>
 
-        {/* Error & Success */}
-        {err && (
-          <div className="bg-red-100 border-2 border-red-500 text-red-800 p-4 rounded-lg text-sm font-semibold shadow-md animate-pulse">
-            {err}
-          </div>
-        )}
-        {successMsg && (
-          <div className="bg-green-100 border-2 border-green-500 text-green-800 p-4 rounded-lg text-sm font-semibold shadow-md animate-pulse">
-            {successMsg}
-          </div>
-        )}
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-3 gap-2">
-          <div className="bg-[#EDF4F0] border border-stone-200 rounded-xl p-4 text-center">
-            <p className="text-xs text-stone-600 mb-1">Receitas</p>
-            <p className="text-lg font-bold text-[#2D5F45]">{formatBRLFromCents(totals.incomeTotal)}</p>
-          </div>
-          <div className="bg-[#F4EDEE] border border-stone-200 rounded-xl p-4 text-center">
-            <p className="text-xs text-stone-600 mb-1">Gastos</p>
-            <p className="text-lg font-bold text-[#7A3030]">{formatBRLFromCents(totals.expensesTotal)}</p>
-          </div>
-          <div className={`border border-stone-200 rounded-xl p-4 text-center ${
-            totals.balance >= 0
-              ? "bg-[#EEF0F4]"
-              : "bg-[#F4F0EC]"
-          }`}>
-            <p className="text-xs text-stone-600 mb-1">Saldo</p>
-            <p className={`text-lg font-bold ${
-              totals.balance >= 0
-                ? "text-[#2E3F5F]"
-                : "text-[#5F4020]"
-            }`}>{formatBRLFromCents(totals.balance)}</p>
-          </div>
-        </div>
-
-        {/* Receitas Section - Improved */}
-        <IncomesManager
-          userId={userId}
-          monthKey={monthKey}
-          income={income}
-          onVariableTotalChange={setVariableIncomeTotal}
-          onUpdate={(updated) => {
-            // Comparacao fora do updater de setIncome: updater precisa ser puro e o
-            // updateIncomeField ja faz a atualizacao otimista e o rollback em erro.
-            if (!income) return;
-            for (const key of Object.keys(DEFAULT_INCOME)) {
-              if (updated[key] !== income[key]) {
-                updateIncomeField(key, updated[key]);
-              }
-            }
-          }}
-        />
-
-        {/* Add Expense Section */}
-        <div className="bg-white rounded-2xl border-2 border-stone-300 shadow-lg p-4">
-          <h2 className="text-lg font-bold text-stone-900 mb-4">➕ Novo gasto</h2>
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-stone-600 block mb-1">Categoria</label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full border border-stone-300 rounded-lg p-3 text-sm focus:outline-none focus:border-stone-600 focus:ring-2 focus:ring-stone-400"
-              >
-                {CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.icon} {c.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-stone-600 block mb-1">Descrição</label>
-              <input
-                placeholder="Ex: Almoço, Gasolina, Supermercado..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full border border-stone-300 rounded-lg p-3 text-sm focus:outline-none focus:border-stone-600 focus:ring-2 focus:ring-stone-400"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-stone-600 block mb-1">Valor</label>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <MoneyInput
-                    value={amount}
-                    onChange={setAmount}
-                    placeholder="0,00"
-                  />
-                </div>
-                <button
-                  onClick={addExpense}
-                  disabled={busy || !description.trim() || !amount}
-                  className="bg-[#3D3D3D] text-white px-6 rounded-lg font-bold hover:bg-[#2C2C2C] transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm h-auto"
-                  title={!description.trim() ? "Digite a descrição" : !amount ? "Digite o valor" : "Clique para salvar"}
+        <div
+          role="tabpanel"
+          id={`painel-${activeTab}`}
+          aria-labelledby={`aba-${activeTab}`}
+          tabIndex={-1}
+          className="focus:outline-none"
+        >
+          {activeTab === "gastos" && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start">
+              <div className="space-y-4 lg:col-span-5">
+                <section
+                  aria-label="Resumo do mês"
+                  className="rounded-2xl bg-hero p-5 text-on-hero sm:p-6"
                 >
-                  {busy ? "Salvando..." : "Salvar"}
-                </button>
+                  <p className="text-sm text-on-hero-mute first-letter:uppercase">{monthLabel(monthKey)}</p>
+                  <p className="mt-3 text-sm text-on-hero-mute">Saldo</p>
+                  <p
+                    className={`num mt-0.5 text-4xl font-semibold tracking-tight ${
+                      totals.balance >= 0 ? "text-primary" : "text-[#ff8f93]"
+                    }`}
+                  >
+                    {formatBRLFromCents(totals.balance)}
+                  </p>
+                  <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-white/10 pt-4">
+                    <div>
+                      <dt className="text-xs text-on-hero-mute">Receitas</dt>
+                      <dd className="num mt-0.5 text-lg font-semibold">{formatBRLFromCents(totals.incomeTotal)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-on-hero-mute">
+                        Gastos{filter !== "todos" ? ` (${filterLabel.toLowerCase()})` : ""}
+                      </dt>
+                      <dd className="num mt-0.5 text-lg font-semibold">{formatBRLFromCents(totals.expensesTotal)}</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <ExpenseForm monthKey={monthKey} onSaved={loadExpenses} onError={setErr} />
+
+                <CategoryBreakdown expenses={filteredExpenses} />
+              </div>
+
+              <div className="space-y-4 lg:col-span-7">
+                <ExpenseList
+                  expenses={filteredExpenses}
+                  filter={filter}
+                  onFilterChange={setFilter}
+                  onChanged={loadExpenses}
+                  onError={setErr}
+                />
+
+                <IncomesManager
+                  key={dataVersion}
+                  monthKey={monthKey}
+                  income={income}
+                  onUpdate={handleIncomeChange}
+                  onVariableTotalChange={setVariableIncomeTotal}
+                  onError={setErr}
+                />
               </div>
             </div>
+          )}
 
-            {/* Payment Control Section - Only for non-fixed expenses */}
-            {category !== "fixos" && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 space-y-3">
-                <div>
-                  <label className="text-xs font-medium text-stone-600 block mb-1">💳 Forma de Pagamento</label>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
-                  >
-                    <option value="debit">🏧 Débito</option>
-                    <option value="pix">📱 PIX</option>
-                    <option value="credit">💳 Crédito</option>
-                  </select>
-                </div>
+          {activeTab === "plano" && (
+            <PlanTab
+              key={`${monthKey}-${dataVersion}`}
+              monthKey={monthKey}
+              income={income}
+              onIncomeChange={handleIncomeChange}
+              onError={setErr}
+            />
+          )}
 
-                {paymentMethod === "credit" && (
-                  <div>
-                    <label className="text-xs font-medium text-stone-600 block mb-1">📊 Parcelas</label>
-                    <div className="grid grid-cols-6 gap-1">
-                      {[1, 2, 3, 4, 6, 12].map((num) => (
-                        <button
-                          key={num}
-                          onClick={() => setInstallments(num)}
-                          className={`px-2 py-1 rounded text-xs font-medium transition ${
-                            installments === num
-                              ? "bg-purple-600 text-white"
-                              : "bg-white border border-stone-300 text-stone-700 hover:bg-stone-100"
-                          }`}
-                        >
-                          {num}x
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+          {activeTab === "recibos" && <ReceiptsTab key={dataVersion} monthKey={monthKey} onError={setErr} />}
 
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="isPaid"
-                    checked={isPaid}
-                    onChange={(e) => setIsPaid(e.target.checked)}
-                    className="w-4 h-4 accent-green-600 cursor-pointer"
-                  />
-                  <label htmlFor="isPaid" className="text-xs font-medium text-stone-600 cursor-pointer">
-                    ✅ Já foi pago?
-                  </label>
-                </div>
-
-                {isPaid && (
-                  <div>
-                    <label className="text-xs font-medium text-stone-600 block mb-1">📅 Data do Pagamento</label>
-                    <input
-                      type="date"
-                      value={paidDate}
-                      onChange={(e) => setPaidDate(e.target.value)}
-                      className="w-full border border-stone-300 rounded-lg p-2 text-sm focus:outline-none focus:border-stone-600"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Fixed Expense Info */}
-            {category === "fixos" && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                <div className="flex items-center gap-2 text-sm text-green-800">
-                  <span>🔄</span>
-                  <span><strong>Gasto Fixo</strong> - Aparecerá todos os meses automaticamente</span>
-                </div>
-              </div>
-            )}
-
-            {amount > 0 && description.trim() && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800 space-y-1">
-                <div>✅ Pronto para salvar: <strong>{description}</strong> - <strong>{formatBRLFromCents(amount)}</strong></div>
-                <div className="text-xs">
-                  {paymentMethod === "credit" ? (
-                    <span>💳 Crédito em {installments}x de {formatBRLFromCents(splitInstallments(Number(amount), installments)[0])}</span>
-                  ) : paymentMethod === "pix" ? (
-                    <span>📱 PIX {isPaid ? "✓ Pago" : "⏳ Pendente"}</span>
-                  ) : (
-                    <span>🏧 Débito {isPaid ? "✓ Pago" : "⏳ Pendente"}</span>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Category Totals */}
-          <div className="grid grid-cols-3 gap-2 mt-3">
-            {CATEGORIES.slice(0, 6).map((cat) => (
-              <div
-                key={cat.value}
-                className={`${cat.color} border rounded-lg p-2 text-center text-xs font-medium`}
-              >
-                <p>{cat.icon}</p>
-                <p className="font-bold mt-0.5">
-                  {formatBRLFromCents(totals.byCategory[cat.value] || 0)}
-                </p>
-              </div>
-            ))}
-          </div>
+          {activeTab === "comparar" && <StoreComparison key={dataVersion} monthKey={monthKey} />}
         </div>
-
-        {/* Expenses List */}
-        <div className="bg-white rounded-2xl border border-stone-100 p-4">
-          <h2 className="text-lg font-bold text-stone-900 mb-3">📝 Lançamentos ({filteredExpenses.length})</h2>
-          <div className="space-y-2">
-            {filteredExpenses.length === 0 ? (
-              <p className="text-stone-500 text-center py-4 text-sm">Nenhum gasto registrado.</p>
-            ) : (
-              groupedExpenses.map(({ period, items }) => (
-                <div key={period}>
-                  <p className="text-xs font-bold text-stone-600 my-2 px-2">{period}</p>
-                  {items.map((e) => {
-                    const catInfo = CATEGORY_MAP[e.category] || {
-                      label: e.category,
-                      icon: "❓",
-                      color: ""
-                    };
-                    const groupKey = `${e.description}|${e.category}|${e.date}`;
-                    const isExpanded = expandedGroups.has(groupKey);
-                    const hasMultiple = e.count > 1;
-
-                    return (
-                      <div key={e.id}>
-                        {/* ITEM AGRUPADO OU ÚNICO */}
-                        <div
-                          className="bg-white border border-stone-100 rounded-xl p-3 flex items-center justify-between hover:bg-stone-50 transition text-sm"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-stone-900 flex items-center gap-2">
-                              <span>{catInfo.icon}</span>
-                              <span className="truncate">{e.description}</span>
-                              {hasMultiple && (
-                                <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
-                                  ×{e.count}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-stone-500 mt-1">
-                              {formatDatePT(e.date)}
-                            </div>
-                            <div className="text-xs text-stone-600 mt-1 flex gap-2 flex-wrap">
-                              <span>
-                                {e.payment_method === "credit"
-                                  ? `💳 Crédito (${e.installments}x)`
-                                  : e.payment_method === "pix"
-                                  ? "📱 PIX"
-                                  : "🏧 Débito"}
-                              </span>
-                              <span>
-                                {e.is_paid
-                                  ? `✅ Pago em ${formatDatePT(e.paid_date)}`
-                                  : "⏳ Pendente"}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1 ml-2">
-                            <div className="font-semibold text-stone-900 min-w-max">
-                              {formatBRLFromCents(e.amount_cents)}
-                            </div>
-                            <div className="flex gap-1">
-                              {hasMultiple && (
-                                <button
-                                  onClick={() => {
-                                    const newSet = new Set(expandedGroups);
-                                    if (newSet.has(groupKey)) {
-                                      newSet.delete(groupKey);
-                                    } else {
-                                      newSet.add(groupKey);
-                                    }
-                                    setExpandedGroups(newSet);
-                                  }}
-                                  className="text-stone-400 hover:text-blue-600 font-bold text-lg transition"
-                                  title={isExpanded ? "Recolher" : "Expandir"}
-                                >
-                                  {isExpanded ? "▼" : "▶"}
-                                </button>
-                              )}
-                              {/* Linha agrupada soma varios registros: editar/excluir so nos sub-itens,
-                                  senao a soma do grupo era gravada em um unico registro. */}
-                              {!hasMultiple && (
-                                <>
-                                  <button
-                                    onClick={() => startEdit(e)}
-                                    disabled={busy || editingId !== null}
-                                    className="text-stone-400 hover:text-stone-700 font-bold text-lg transition disabled:opacity-50"
-                                    title="Editar"
-                                  >
-                                    ✎
-                                  </button>
-                                  <button
-                                    onClick={() => deleteExpense(e.id)}
-                                    disabled={busy || editingId !== null}
-                                    className="text-stone-400 hover:text-red-500 font-bold text-lg transition disabled:opacity-50"
-                                    title="Deletar"
-                                  >
-                                    ✕
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* ITENS EXPANDIDOS */}
-                        {hasMultiple && isExpanded && (
-                          <div className="ml-4 mt-2 space-y-2 border-l-2 border-blue-200 pl-3">
-                            {e.items.map((item) => (
-                              <div
-                                key={item.id}
-                                className="bg-blue-50 border border-blue-100 rounded-lg p-2 flex items-center justify-between text-sm"
-                              >
-                                <div className="flex-1">
-                                  <div className="text-blue-900 font-medium">
-                                    {formatBRLFromCents(item.amount_cents)}
-                                  </div>
-                                </div>
-                                <div className="flex gap-1">
-                                  <button
-                                    onClick={() => startEdit(item)}
-                                    disabled={busy || editingId !== null}
-                                    className="text-blue-400 hover:text-blue-700 font-bold transition disabled:opacity-50"
-                                    title="Editar"
-                                  >
-                                    ✎
-                                  </button>
-                                  <button
-                                    onClick={() => deleteExpense(item.id)}
-                                    disabled={busy || editingId !== null}
-                                    className="text-blue-400 hover:text-red-500 font-bold transition disabled:opacity-50"
-                                    title="Deletar"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* MODO EDIÇÃO - ITEM INDIVIDUAL */}
-                        {/* O editor aparece para o registro em edicao, seja a linha unica ou um sub-item do grupo */}
-                        {editingId !== null && e.items.some((item) => item.id === editingId) && (
-                          <div className="ml-4 mt-2 bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={editAmount}
-                              onChange={(e) => setEditAmount(e.target.value)}
-                              inputMode="decimal"
-                              className="flex-1 border border-yellow-300 rounded p-1 text-xs focus:outline-none focus:border-yellow-600"
-                            />
-                            <button
-                              onClick={() => saveEdit(editingId)}
-                              disabled={busy}
-                              className="bg-[#4A7C59] text-white px-2 py-1 rounded text-xs font-medium hover:bg-[#3D6A4A] transition"
-                            >
-                              ✓
-                            </button>
-                            <button
-                              onClick={cancelEdit}
-                              disabled={busy}
-                              className="bg-stone-400 text-white px-2 py-1 rounded text-xs font-medium hover:bg-stone-500 transition"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-          </>
-        )}
-
-        {activeTab === "recibos" && (
-          <ReceiptsTab userId={userId} monthKey={monthKey} />
-        )}
-
-        {activeTab === "comparar" && (
-          <StoreComparison userId={userId} monthKey={monthKey} />
-        )}
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

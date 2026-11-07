@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
+import { INPUT_CLASS } from "./ui";
 
 function formatCents(cents) {
   if (!cents) return "";
@@ -14,15 +15,21 @@ function formatFromProp(value) {
   return formatCents(parseInt(value) || 0);
 }
 
+// Campo de dinheiro que digita da direita para a esquerda: "1", "12", "1,23", "12,34".
+// onChange recebe centavos (inteiro) ou "" quando o campo fica vazio.
 export default function MoneyInput({
+  id,
+  name,
   label,
   value,
   onChange,
   placeholder = "0,00",
   disabled = false,
-  autoFocus = false,
-  className = ""
+  className = "",
+  ...rest
 }) {
+  const autoId = useId();
+  const inputId = id || autoId;
   const [displayValue, setDisplayValue] = useState(() => formatFromProp(value));
   const [prevValue, setPrevValue] = useState(value);
 
@@ -35,8 +42,7 @@ export default function MoneyInput({
   }
 
   function handleChange(e) {
-    const input = e.target.value;
-    const onlyNumbers = input.replace(/\D/g, "");
+    const onlyNumbers = e.target.value.replace(/\D/g, "");
 
     if (!onlyNumbers) {
       setDisplayValue("");
@@ -45,31 +51,42 @@ export default function MoneyInput({
     }
 
     const cents = parseInt(onlyNumbers) || 0;
-    const formatted = formatCents(cents);
-    setDisplayValue(formatted);
+    setDisplayValue(formatCents(cents));
     onChange(cents);
   }
 
+  const input = (
+    <div className="relative">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-mute"
+      >
+        R$
+      </span>
+      <input
+        id={inputId}
+        name={name}
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        value={displayValue}
+        onChange={handleChange}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={`${INPUT_CLASS} num pl-10 ${className}`}
+        {...rest}
+      />
+    </div>
+  );
+
+  if (!label) return input;
+
   return (
-    <label className="block">
-      {label && (
-        <div className="text-xs font-medium text-stone-700 mb-1">{label}</div>
-      )}
-      <div className="relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-600 font-medium text-sm pointer-events-none">
-          R$
-        </span>
-        <input
-          type="text"
-          inputMode="numeric"
-          value={displayValue}
-          onChange={handleChange}
-          placeholder={placeholder}
-          disabled={disabled}
-          autoFocus={autoFocus}
-          className={`w-full border border-stone-300 rounded-lg p-3 pl-10 text-sm focus:outline-none focus:border-stone-600 focus:ring-1 focus:ring-stone-600 transition disabled:bg-stone-100 disabled:text-stone-500 ${className}`}
-        />
-      </div>
-    </label>
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={inputId} className="text-[13px] font-medium text-body">
+        {label}
+      </label>
+      {input}
+    </div>
   );
 }

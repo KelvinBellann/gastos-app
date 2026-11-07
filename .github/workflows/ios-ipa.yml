@@ -1,0 +1,58 @@
+# Gera o .ipa do app iOS (ios/) com xtool num runner macOS, sem assinatura. A assinatura
+# e a instalacao no iPhone ficam no Windows, com o Sideloadly e o Apple ID do usuario.
+name: iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, ios-xtool]
+    paths:
+      - "ios/**"
+      - "src/**"
+      - "public/**"
+      - "package.json"
+      - "package-lock.json"
+      - "next.config.mjs"
+      - "scripts/sync-ios-web.mjs"
+      - ".github/workflows/ios-ipa.yml"
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Site estatico para dentro do app
+        run: |
+          npm ci
+          npm run build:ios
+
+      - name: Instalar xtool
+        run: |
+          brew install xtool-org/tap/xtool
+          xtool --help | head -3
+          swift --version
+
+      - name: Gerar .ipa
+        working-directory: ios
+        run: xtool dev build --ipa --configuration release
+
+      - name: Localizar .ipa
+        id: ipa
+        run: |
+          ipa="$(find ios -name '*.ipa' -not -path '*/Web/*' -print -quit)"
+          test -n "$ipa"
+          echo "path=$ipa" >> "$GITHUB_OUTPUT"
+          ls -lh "$ipa"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Gastos-ipa
+          path: ${{ steps.ipa.outputs.path }}
+          if-no-files-found: error

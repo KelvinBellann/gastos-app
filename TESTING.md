@@ -3,36 +3,32 @@
 ## Rodar
 
 ```bash
-npm install
-npm test               # uma execucao
-npm run test:watch     # modo watch
-npm test -- MoneyInput.test.js          # um arquivo
-npm test -- --testNamePattern="null"    # por nome
-npm test -- --coverage                  # com cobertura
+npm test                                 # uma execucao
+npm run test:watch                       # modo watch
+npm test -- localDb.test.js              # um arquivo
+npm test -- --coverage                   # com cobertura
 ```
 
-Configuracao em `jest.config.js` (`next/jest`, ambiente jsdom, alias `@/` para `src/`) e `jest.setup.js` (`@testing-library/jest-dom`).
+Configuração em `jest.config.js` (`next/jest`, ambiente jsdom, alias `@/` para `src/`) e `jest.setup.js` (`@testing-library/jest-dom`). O jsdom fornece o `localStorage` usado pelo banco local.
 
-## Estado atual (2026-09-28)
+## Estado atual (2026-10-12)
 
-| Suite | Casos | Cobre |
-|---|---|---|
-| `src/components/MoneyInput.test.js` | 14 | formatacao de centavos para `R$` e parse da digitacao |
-| `src/components/IncomesManager.test.js` | 6 | soma das receitas fixas com `income` null/undefined |
-| Total | 20 passaram, 0 falharam, 0 skip | |
+| Suite | Cobre |
+|---|---|
+| `src/lib/localDb.test.js` | filtro de gastos por mês, CRUD, desfazer, cascata de recibos, exportar e importar backup, JSON corrompido |
+| `src/lib/plan.test.js` | divisão essencial primeiro, mês fraco, renda que não cobre, bônus para o futuro, reserva antes de investir, previsões, gasto real com benefícios |
+| `src/lib/text.test.js` | padrão de escrita das descrições: primeira letra maiúscula, resto minúsculo, espaços sobrando |
+| `src/lib/expenses.test.js` | divisão de parcelas, virada de ano, registros por forma de pagamento, período, filtro e agrupamento |
+| `src/lib/dates.test.js` | datas no fuso local |
+| `src/lib/receiptParser.test.js` | parser da nota fiscal |
+| `src/components/MoneyInput.test.js` | formatação de centavos (cópia da lógica) |
+| `src/components/IncomesManager.test.js` | soma das receitas fixas (cópia da lógica) |
 
-Limitacao: os dois arquivos reimplementam a logica dentro do proprio teste e nao importam os componentes de `src/`. Uma regressao no componente real nao faz esses testes falharem. `@testing-library/react` 16 e `@testing-library/dom` 10 estao instalados e compativeis com React 19, entao o proximo passo e renderizar os componentes de verdade.
+Resultado em 2026-10-12: 8 suítes, 70 testes, 70 passaram, 0 falharam, 0 em skip.
 
-## Sem cobertura
+Limitação: os testes de `MoneyInput` e `IncomesManager` reimplementam a lógica e não importam o componente.
 
-- `Dashboard.js`: divisao de parcelas, agrupamento por descricao/dia, carregamento por mes
-- `receiptParser.js`: funcoes puras, candidato imediato a teste unitario
-- `receiptOCR.js`, `LoginPage.js`, `ReceiptsTab.js`, `ReceiptUpload.js`, `StoreComparison.js`
-- qualquer chamada ao Supabase (sem mock configurado)
+## Próximos passos
 
-## Proximos passos
-
-- [ ] Testes de `receiptParser.js` com textos reais de nota
-- [ ] Render dos componentes com `@testing-library/react` e mock de `@/lib/supabaseClient`
-- [ ] Testes da divisao de parcelas em `Dashboard.js` (valor por parcela e resto na ultima)
-- [ ] E2E com Playwright
+- [ ] Render dos componentes com `@testing-library/react`
+- [ ] E2E com Playwright versionado no repositório
