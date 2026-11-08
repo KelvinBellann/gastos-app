@@ -5,6 +5,7 @@ App iOS que empacota o site estático do Next (`out/`) e abre num `WKWebView`. N
 ## Como funciona
 
 - `Package.swift` + `xtool.yml`: projeto SwiftPM que o [xtool](https://xtool.sh) transforma em app iOS (bundle `com.kelvinbellan.gastos`).
+- `Resources/AppIcon.png`: ícone do app (1024x1024, sem transparência), gerado a partir de `Resources/AppIcon.svg`.
 - `Sources/GastosApp/Web/`: cópia de `out/`, gerada por `npm run build:ios`. Não vai para o git.
 - `WebAppView.swift`: serve os arquivos pelo esquema `gastos://localhost`. O Next usa caminhos absolutos (`/_next/...`), que quebram em `file://`, e a origem fixa mantém o `localStorage` entre aberturas.
 - Exportar backup abre a folha de compartilhar do iOS (salvar em Arquivos, AirDrop...). Importar usa o seletor de arquivos normal.

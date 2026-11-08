@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   countRows,
+  deleteExpenses,
   exportBackup,
   getOrCreateIncome,
   importBackup,
@@ -29,6 +30,7 @@ import CategoryBreakdown from "./CategoryBreakdown";
 import IncomesManager from "./IncomesManager";
 import PlanTab from "./PlanTab";
 import ReceiptsTab from "./ReceiptsTab";
+import StatementImport from "./StatementImport";
 import StoreComparison from "./StoreComparison";
 
 const TABS = [
@@ -72,6 +74,7 @@ export default function Dashboard() {
   const [filter, setFilter] = useState("todos");
   const [err, setErr] = useState("");
   const [noticeDismissed, setNoticeDismissed] = useState(readNoticeDismissed);
+  const [showStatementImport, setShowStatementImport] = useState(false);
   const importInputRef = useRef(null);
   const tabRefs = useRef({});
 
@@ -176,6 +179,21 @@ export default function Dashboard() {
     } finally {
       if (importInputRef.current) importInputRef.current.value = "";
     }
+  }
+
+  function handleStatementImported(inserted) {
+    setShowStatementImport(false);
+    // Extrato de outro mes: abre o mes dos lancamentos, senao pareceria que nada aconteceu
+    const months = [...new Set(inserted.map((e) => e.month_key))].sort();
+    if (!months.includes(monthKey)) setMonthKey(months[months.length - 1]);
+    setDataVersion((v) => v + 1);
+    toast({
+      message: `${inserted.length} ${inserted.length === 1 ? "gasto importado" : "gastos importados"}.`,
+      onAction: async () => {
+        await deleteExpenses(inserted.map((e) => e.id));
+        setDataVersion((v) => v + 1);
+      },
+    });
   }
 
   function dismissNotice() {
@@ -337,7 +355,12 @@ export default function Dashboard() {
                   </dl>
                 </section>
 
-                <ExpenseForm monthKey={monthKey} onSaved={loadExpenses} onError={setErr} />
+                <ExpenseForm
+                  monthKey={monthKey}
+                  onSaved={loadExpenses}
+                  onError={setErr}
+                  onImportStatement={() => setShowStatementImport(true)}
+                />
 
                 <CategoryBreakdown expenses={filteredExpenses} />
               </div>
@@ -378,6 +401,10 @@ export default function Dashboard() {
           {activeTab === "comparar" && <StoreComparison key={dataVersion} monthKey={monthKey} />}
         </div>
       </main>
+
+      {showStatementImport && (
+        <StatementImport onImported={handleStatementImported} onClose={() => setShowStatementImport(false)} />
+      )}
     </div>
   );
 }

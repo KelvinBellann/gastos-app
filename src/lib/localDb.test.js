@@ -1,6 +1,7 @@
 import {
   countRows,
   deleteExpense,
+  deleteExpenses,
   deleteReceipt,
   exportBackup,
   getOrCreateIncome,
@@ -87,6 +88,13 @@ describe("gastos", () => {
     const restored = await listExpensesForMonth("2026-10");
     expect(restored).toHaveLength(1);
     expect(restored[0].id).toBe(row.id);
+  });
+
+  it("exclui varios de uma vez, como ao desfazer uma importacao de extrato", async () => {
+    const [a, b, c] = await insertExpenses([expense(), expense(), expense()]);
+    const removed = await deleteExpenses([a.id, c.id]);
+    expect(removed.expenses.map((e) => e.id)).toEqual([a.id, c.id]);
+    expect((await listExpensesForMonth("2026-10")).map((e) => e.id)).toEqual([b.id]);
   });
 
   it("erra ao editar gasto inexistente", async () => {

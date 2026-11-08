@@ -27,9 +27,15 @@ export const CATEGORY_BUCKET = {
   farmacia: "essentials",
   carro: "essentials",
   gatos: "essentials",
+  banco: "essentials",
+  contas: "essentials",
+  transporte: "essentials",
+  saude: "essentials",
   lanches: "leisure",
   aleatorios: "leisure",
   dinheiro: "leisure",
+  assinaturas: "leisure",
+  transferencias: "leisure",
   emprestado: "outside",
 };
 

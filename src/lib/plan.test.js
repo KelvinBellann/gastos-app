@@ -144,6 +144,16 @@ describe("gasto real por pote", () => {
     expect(cashFlowExpenses(expenses, "2026-10")).toHaveLength(5);
   });
 
+  it("categorias do extrato entram no pote certo", () => {
+    const rows = ["banco", "contas", "transporte", "saude", "assinaturas", "transferencias"].map((category) => ({
+      category,
+      month_key: "2026-10",
+      payment_method: "debit",
+      amount_cents: 1000,
+    }));
+    expect(actualByBucket(rows, "2026-10")).toMatchObject({ essentials: 4000, leisure: 2000 });
+  });
+
   it("beneficios abatem mercado e depois lanches", () => {
     expect(actualByBucket(expenses, "2026-10", 90000)).toEqual({
       essentials: 180000,

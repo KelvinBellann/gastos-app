@@ -152,6 +152,16 @@ export async function deleteExpense(id) {
   return { expenses: removed };
 }
 
+// Desfaz uma importacao de extrato de uma vez so
+export async function deleteExpenses(ids) {
+  const targets = new Set(ids);
+  const db = readDb();
+  const removed = db.expenses.filter((e) => targets.has(e.id));
+  db.expenses = db.expenses.filter((e) => !targets.has(e.id));
+  writeDb(db);
+  return { expenses: removed };
+}
+
 // ---------- Receitas variaveis ----------
 
 export async function listVariableIncomes(monthKey) {

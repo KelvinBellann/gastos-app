@@ -6,3 +6,13 @@ export function toSentenceCase(text) {
   // Primeira LETRA, nao primeiro caractere: "2 paes" e "(promo) arroz" tambem seguem o padrao
   return clean.replace(/\p{L}/u, (c) => c.toLocaleUpperCase("pt-BR"));
 }
+
+// Forma usada so para comparar textos: sem acento, minuscula e apenas letras e numeros
+export function normalizeForMatch(text) {
+  return String(text ?? "")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}

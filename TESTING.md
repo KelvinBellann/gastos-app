@@ -11,7 +11,7 @@ npm test -- --coverage                   # com cobertura
 
 Configuração em `jest.config.js` (`next/jest`, ambiente jsdom, alias `@/` para `src/`) e `jest.setup.js` (`@testing-library/jest-dom`). O jsdom fornece o `localStorage` usado pelo banco local.
 
-## Estado atual (2026-10-12)
+## Estado atual (2026-11-08)
 
 | Suite | Cobre |
 |---|---|
@@ -21,10 +21,12 @@ Configuração em `jest.config.js` (`next/jest`, ambiente jsdom, alias `@/` para
 | `src/lib/expenses.test.js` | divisão de parcelas, virada de ano, registros por forma de pagamento, período, filtro e agrupamento |
 | `src/lib/dates.test.js` | datas no fuso local |
 | `src/lib/receiptParser.test.js` | parser da nota fiscal |
+| `src/lib/statementParser.test.js` | valores, OFX 1.x e 2.x, CSV dos principais bancos, Latin-1, texto de OCR em tabela e em lista de app, prints sobrepostos |
+| `src/lib/statementClassifier.test.js` | categorias do extrato, duplicados, gastos fixos, fatura e investimento, gravação no mês certo |
 | `src/components/MoneyInput.test.js` | formatação de centavos (cópia da lógica) |
 | `src/components/IncomesManager.test.js` | soma das receitas fixas (cópia da lógica) |
 
-Resultado em 2026-10-12: 8 suítes, 70 testes, 70 passaram, 0 falharam, 0 em skip.
+Resultado em 2026-11-08: 10 suítes, 144 testes, 144 passaram, 0 falharam, 0 em skip.
 
 Limitação: os testes de `MoneyInput` e `IncomesManager` reimplementam a lógica e não importam o componente.
 

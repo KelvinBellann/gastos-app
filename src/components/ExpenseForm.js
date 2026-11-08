@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Plus } from "@phosphor-icons/react";
+import { FileArrowUp, Plus } from "@phosphor-icons/react";
 import { insertExpenses } from "@/lib/localDb";
 import { todayISO, isValidISODate } from "@/lib/dates";
 import { addMonths, buildExpenseEntries, monthLabel, splitInstallments } from "@/lib/expenses";
@@ -13,7 +13,7 @@ import { Button, Card, CardHeader, ChoiceChip, Field, INPUT_CLASS, useToast } fr
 
 const INSTALLMENT_OPTIONS = [1, 2, 3, 4, 5, 6, 10, 12];
 
-export default function ExpenseForm({ monthKey, onSaved, onError }) {
+export default function ExpenseForm({ monthKey, onSaved, onError, onImportStatement }) {
   const toast = useToast();
   const [category, setCategory] = useState("mercado");
   const [description, setDescription] = useState("");
@@ -86,7 +86,16 @@ export default function ExpenseForm({ monthKey, onSaved, onError }) {
 
   return (
     <Card aria-labelledby="novo-gasto-titulo">
-      <CardHeader id="novo-gasto-titulo" title="Novo gasto" />
+      <CardHeader
+        id="novo-gasto-titulo"
+        title="Novo gasto"
+        action={
+          <Button variant="secondary" size="sm" onClick={onImportStatement}>
+            <FileArrowUp size={16} aria-hidden="true" />
+            Importar extrato
+          </Button>
+        }
+      />
 
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">

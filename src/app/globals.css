@@ -111,6 +111,11 @@ body {
   outline-offset: 2px;
 }
 
+/* O painel so recebe foco por codigo, ao fechar um dialogo: sem isso ganhava contorno na tela toda */
+[role="tabpanel"]:focus-visible {
+  outline: none;
+}
+
 input,
 select,
 textarea {

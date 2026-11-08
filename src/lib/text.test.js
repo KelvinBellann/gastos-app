@@ -1,4 +1,15 @@
-import { toSentenceCase } from "./text";
+import { normalizeForMatch, toSentenceCase } from "./text";
+
+describe("normalizeForMatch", () => {
+  it("tira acento, caixa e pontuacao", () => {
+    expect(normalizeForMatch("  FARMÁCIA  São-João* ")).toBe("farmacia sao joao");
+    expect(normalizeForMatch("APPLE.COM/BILL")).toBe("apple com bill");
+  });
+
+  it("aceita vazio e nulo", () => {
+    expect(normalizeForMatch(null)).toBe("");
+  });
+});
 
 describe("toSentenceCase", () => {
   it("deixa so a primeira letra maiuscula", () => {

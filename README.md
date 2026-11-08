@@ -46,6 +46,25 @@ Não há variável de ambiente. O `.env.local` antigo (Supabase) não é mais us
 | Filtro de período | Hoje, 7 dias, 30 dias ou Todos; o resumo de gastos acompanha o filtro |
 | Mês e aba | Ficam na URL (`?mes=2026-10&aba=recibos`) |
 
+## Importar extrato
+
+O botão **Importar extrato**, em "Novo gasto", aceita foto ou print (uma ou várias imagens, lidas por OCR) e arquivo exportado pelo banco em OFX, CSV ou PDF com texto. Tudo é lido no aparelho; não há conexão com o banco, porque o Open Finance exigiria servidor e um agregador contratado.
+
+Cada lançamento passa por `src/lib/statementClassifier.js` e aparece numa tela de conferência, com categoria editável e total por categoria:
+
+| Situação | Comportamento |
+|---|---|
+| Categoria | A que a pessoa já usou para a mesma descrição; senão, regras por palavra-chave (mercado, banco, assinaturas, contas, transporte, saúde, transferências...). Sem regra, cai em Aleatórios |
+| Entrada de dinheiro | Fica de fora e o total ignorado é informado: salário já é receita no app |
+| Mesma data e valor de um gasto existente | Vem desmarcado, para reimportar sem duplicar |
+| Mesmo valor de um gasto fixo | Vem desmarcado, porque fixos já contam em todos os meses |
+| Pagamento de fatura e investimento | Vêm desmarcados, porque não são consumo |
+| Mês do gasto | O da data do lançamento, mesmo que o extrato cruze meses |
+| Extrato de cartão | Segue a regra do crédito: parcela única no mês seguinte à compra |
+| Depois de importar | "Desfazer" por 6 segundos remove todos os lançamentos importados |
+
+Para melhorar a classificação, acrescente termos em `RULES`: a ordem importa, porque a primeira regra que casa vale.
+
 ## Aba Plano
 
 Divide a renda do casal todo mês entre essenciais, lazer e futuro, e acompanha a reserva de emergência e a meta de viver de renda.
@@ -83,6 +102,8 @@ Previsões usam a média do futuro dos últimos 3 meses fechados. A reserva é t
 - `src/lib/expenses.js`: parcelas, períodos, filtro e agrupamento
 - `src/lib/plan.js`: divisão do mês, gasto real por pote, metas e previsões
 - `src/lib/receiptOCR.js`, `receiptParser.js`: leitura e interpretação da nota
+- `src/components/StatementImport.js`: importação e conferência do extrato
+- `src/lib/statementParser.js`, `statementPdf.js`, `statementClassifier.js`: leitura de OFX, CSV, PDF e texto de OCR, e categorização dos lançamentos
 - `src/app/globals.css`: tokens de cor dos temas claro e escuro
 
 ## Dívida conhecida

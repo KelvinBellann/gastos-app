@@ -1,11 +1,16 @@
 import {
+  ArrowsClockwise,
+  ArrowsLeftRight,
   Bank,
+  Bus,
   Car,
   Cat,
   CreditCard,
   Hamburger,
   HandCoins,
+  Heartbeat,
   House,
+  Lightning,
   Money,
   Pill,
   PixLogo,
@@ -25,6 +30,12 @@ export const CATEGORIES = [
   { value: "dinheiro", label: "Dinheiro", Icon: Money },
   { value: "carro", label: "Carro", Icon: Car },
   { value: "farmacia", label: "Farmácia", Icon: Pill },
+  { value: "assinaturas", label: "Assinaturas", Icon: ArrowsClockwise },
+  { value: "banco", label: "Banco", Icon: Bank },
+  { value: "contas", label: "Contas", Icon: Lightning },
+  { value: "transporte", label: "Transporte", Icon: Bus },
+  { value: "saude", label: "Saúde", Icon: Heartbeat },
+  { value: "transferencias", label: "Transferências", Icon: ArrowsLeftRight },
 ];
 
 const CATEGORY_MAP = Object.fromEntries(CATEGORIES.map((c) => [c.value, c]));
