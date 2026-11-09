@@ -23,12 +23,14 @@ Configuração em `jest.config.js` (`next/jest`, ambiente jsdom, alias `@/` para
 | `src/lib/receiptParser.test.js` | parser da nota fiscal |
 | `src/lib/statementParser.test.js` | valores, OFX 1.x e 2.x, CSV dos principais bancos, Latin-1, texto de OCR em tabela e em lista de app, prints sobrepostos |
 | `src/lib/statementClassifier.test.js` | categorias do extrato, duplicados, gastos fixos, fatura e investimento, gravação no mês certo |
+| `src/lib/dueAlerts.test.js` | horários dos avisos, dia do cartão e dia próprio, meses curtos, contas pagas, agrupamento, fixos, limite do iOS |
+| `src/lib/nativeAlerts.test.js` | mensagens para o lado nativo, lista vazia ao desligar, uma sincronização por vez |
 | `src/components/MoneyInput.test.js` | formatação de centavos (cópia da lógica) |
 | `src/components/IncomesManager.test.js` | soma das receitas fixas (cópia da lógica) |
 
-Resultado em 2026-11-08: 10 suítes, 144 testes, 144 passaram, 0 falharam, 0 em skip.
+Resultado em 2026-11-08: 12 suítes, 177 testes, 177 passaram, 0 falharam, 0 em skip.
 
-Limitação: os testes de `MoneyInput` e `IncomesManager` reimplementam a lógica e não importam o componente.
+Limitações: os testes de `MoneyInput` e `IncomesManager` reimplementam a lógica e não importam o componente. O código Swift (`ios/`) não tem testes: os avisos só podem ser confirmados no iPhone, com o botão "Enviar aviso de teste".
 
 ## Próximos passos
 

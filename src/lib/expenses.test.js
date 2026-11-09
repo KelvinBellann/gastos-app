@@ -5,6 +5,7 @@ import {
   getPeriodLabel,
   groupExpenses,
   isValidMonthKey,
+  samePurchase,
   splitInstallments,
 } from "./expenses";
 
@@ -100,5 +101,41 @@ describe("periodo, filtro e agrupamento", () => {
     expect(cafe).toMatchObject({ count: 2, amount_cents: 1200 });
     expect(cafe.items.map((i) => i.id)).toEqual(["1", "2"]);
     expect(rows[0].amount_cents).toBe(500);
+  });
+});
+
+describe("dia de vencimento", () => {
+  const base = { monthKey: "2026-10", description: "Tenis", amountCents: 10000, date: "2026-10-12" };
+
+  it("vai para todas as parcelas da compra", () => {
+    const rows = buildExpenseEntries({ ...base, category: "aleatorios", paymentMethod: "credit", installments: 3, dueDay: 15 });
+    expect(rows.map((r) => r.due_day)).toEqual([15, 15, 15]);
+  });
+
+  it("sem dia fica nulo", () => {
+    const [row] = buildExpenseEntries({ ...base, category: "mercado", paymentMethod: "debit" });
+    expect(row.due_day).toBeNull();
+  });
+});
+
+describe("samePurchase", () => {
+  const row = (description, overrides) => ({
+    description,
+    payment_method: "credit",
+    installments: 3,
+    date: "2026-10-12",
+    ...overrides,
+  });
+
+  it("liga as parcelas da mesma compra", () => {
+    expect(samePurchase(row("Tv (1/3)"), row("Tv (3/3)"))).toBe(true);
+  });
+
+  it("separa outra compra, outro dia, outra quantidade e o que nao e parcelado", () => {
+    expect(samePurchase(row("Tv (1/3)"), row("Sofa (1/3)"))).toBe(false);
+    expect(samePurchase(row("Tv (1/3)"), row("Tv (2/3)", { date: "2026-10-13" }))).toBe(false);
+    expect(samePurchase(row("Tv (1/3)"), row("Tv (1/6)", { installments: 6 }))).toBe(false);
+    expect(samePurchase(row("Tv", { installments: 1 }), row("Tv", { installments: 1 }))).toBe(false);
+    expect(samePurchase(row("Tv", { payment_method: "debit" }), row("Tv", { payment_method: "debit" }))).toBe(false);
   });
 });

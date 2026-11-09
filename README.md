@@ -6,7 +6,7 @@ Stack: Next.js 16 (App Router, React Compiler), React 19, Tailwind 4, Phosphor I
 
 ## Onde ficam os dados
 
-- Tudo fica no `localStorage` do navegador, na chave `gastos-app:db:v1`, com as tabelas `incomes`, `expenses`, `variable_incomes`, `receipts`, `receipt_items`, `plan_settings`, `plan_months` e `plan_contributions`.
+- Tudo fica no `localStorage` do navegador, na chave `gastos-app:db:v1`, com as tabelas `incomes`, `expenses`, `variable_incomes`, `receipts`, `receipt_items`, `plan_settings`, `plan_months`, `plan_contributions` e `alert_settings`.
 - Cada navegador e cada aparelho tem a sua cópia. Abrir o app no celular não mostra o que foi lançado no computador.
 - Limpar os dados do site no navegador apaga tudo. Por isso o topo do app tem dois botões:
   - **Exportar backup**: baixa `gastos-backup-AAAA-MM-DD.json` com todas as tabelas.
@@ -65,6 +65,23 @@ Cada lançamento passa por `src/lib/statementClassifier.js` e aparece numa tela 
 
 Para melhorar a classificação, acrescente termos em `RULES`: a ordem importa, porque a primeira regra que casa vale.
 
+## Avisos de vencimento
+
+Só no app do iPhone: o sino no topo liga as notificações, que o próprio iOS dispara com o app fechado e sem internet. No navegador o sino e os campos de vencimento não aparecem.
+
+| Situação | Comportamento |
+|---|---|
+| Parcela de crédito | Vence no mês da parcela, no dia próprio da compra ou, sem ele, no dia do cartão definido no sino |
+| Gasto fixo | Com dia informado, avisa todo mês. Sem dia, não avisa |
+| Débito ou Pix pendente | Com dia informado, avisa uma vez, no mês do lançamento |
+| Parcela ou conta paga | Sai dos avisos |
+| Dia maior que o mês | Vence no último dia do mês |
+| Mesmo vencimento | Um aviso só, com a soma das contas |
+| Antecedência | Escolhida no sino: 7 dias, 3 dias, 1 dia, 12 horas ou 1 hora. A contagem vai até as 20h do dia do vencimento |
+| Corrigir o dia de uma parcela | Vale para todas as parcelas da compra |
+
+A lista é refeita ao abrir o app e a cada mudança nos dados. O iOS guarda 64 notificações pendentes por app, então só as 60 mais próximas ficam agendadas.
+
 ## Aba Plano
 
 Divide a renda do casal todo mês entre essenciais, lazer e futuro, e acompanha a reserva de emergência e a meta de viver de renda.
@@ -104,6 +121,8 @@ Previsões usam a média do futuro dos últimos 3 meses fechados. A reserva é t
 - `src/lib/receiptOCR.js`, `receiptParser.js`: leitura e interpretação da nota
 - `src/components/StatementImport.js`: importação e conferência do extrato
 - `src/lib/statementParser.js`, `statementPdf.js`, `statementClassifier.js`: leitura de OFX, CSV, PDF e texto de OCR, e categorização dos lançamentos
+- `src/components/DueAlertsDialog.js`: ajustes e prévia dos avisos de vencimento
+- `src/lib/dueAlerts.js`, `nativeAlerts.js`: cálculo dos avisos e ponte com o iOS
 - `src/app/globals.css`: tokens de cor dos temas claro e escuro
 
 ## Dívida conhecida

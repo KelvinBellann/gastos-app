@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import UserNotifications
 import WebKit
 
 // O site do Next usa caminhos absolutos (/_next/...), que nao funcionam em file://. Por
@@ -16,6 +17,8 @@ struct WebAppView: UIViewRepresentable {
         config.websiteDataStore = .default()
         config.setURLSchemeHandler(BundleSchemeHandler(root: webRoot()), forURLScheme: appScheme)
         config.userContentController.add(context.coordinator, name: "shareFile")
+        config.userContentController.add(context.coordinator, name: "dueAlerts")
+        UNUserNotificationCenter.current().delegate = ForegroundAlerts.shared
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.uiDelegate = context.coordinator
@@ -85,6 +88,13 @@ final class Coordinator: NSObject, WKUIDelegate, WKNavigationDelegate, WKScriptM
     // Recebe { filename, content } do botao de exportar backup (Dashboard.js) e abre a
     // folha de compartilhar, de onde da para salvar em Arquivos, mandar por AirDrop etc.
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "dueAlerts" {
+            if let body = message.body as? [String: Any], let webView = message.webView {
+                DueAlerts.handle(body, webView: webView)
+            }
+            return
+        }
+
         guard message.name == "shareFile",
               let body = message.body as? [String: Any],
               let filename = body["filename"] as? String,

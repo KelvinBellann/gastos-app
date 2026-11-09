@@ -1,18 +1,23 @@
 import {
+  DB_CHANGED_EVENT,
   countRows,
   deleteExpense,
   deleteExpenses,
   deleteReceipt,
   exportBackup,
+  getAlertSettings,
   getOrCreateIncome,
   importBackup,
   insertExpenses,
   insertReceiptWithItems,
   insertVariableIncome,
+  listAllExpenses,
   listExpensesForMonth,
   listReceiptsWithItems,
   listVariableIncomes,
   restoreRows,
+  saveAlertSettings,
+  setPurchaseDueDay,
   updateExpense,
   updateIncome,
 } from "./localDb";
@@ -156,5 +161,46 @@ describe("backup", () => {
   it("avisa quando o JSON salvo esta corrompido", async () => {
     window.localStorage.setItem(STORAGE_KEY, "{quebrado");
     await expect(listExpensesForMonth("2026-10")).rejects.toThrow("corrompidos");
+  });
+});
+
+describe("avisos de vencimento", () => {
+  it("guarda os ajustes e inclui no backup", async () => {
+    expect(await getAlertSettings()).toBeNull();
+    await saveAlertSettings({ enabled: true });
+    await saveAlertSettings({ card_due_day: 10 });
+    expect(await getAlertSettings()).toMatchObject({ enabled: true, card_due_day: 10 });
+    expect((await exportBackup()).data.alert_settings).toHaveLength(1);
+  });
+
+  it("backup antigo, sem a tabela de avisos, continua valido", async () => {
+    const { data } = await exportBackup();
+    delete data.alert_settings;
+    await expect(importBackup({ format: "gastos-app-backup", version: 1, data })).resolves.toBe(0);
+    expect(await getAlertSettings()).toBeNull();
+  });
+
+  it("toda gravacao avisa que os dados mudaram", async () => {
+    const listener = jest.fn();
+    window.addEventListener(DB_CHANGED_EVENT, listener);
+    await insertExpenses([expense()]);
+    window.removeEventListener(DB_CHANGED_EVENT, listener);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("corrigir o vencimento de uma parcela vale para a compra inteira", async () => {
+    const parcela = (i) =>
+      expense({
+        description: `Tv (${i}/3)`,
+        payment_method: "credit",
+        installments: 3,
+        installment_number: i,
+        installment_month: `2026-1${i}`,
+      });
+    const outra = expense({ description: "Sofa (1/3)", payment_method: "credit", installments: 3 });
+    const [first] = await insertExpenses([parcela(1), parcela(2), parcela(3), outra]);
+    await setPurchaseDueDay(first, 15);
+    const rows = await listAllExpenses();
+    expect(rows.map((r) => r.due_day)).toEqual([15, 15, 15, undefined]);
   });
 });

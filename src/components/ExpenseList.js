@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { CaretDown, Check, ListBullets, PencilSimple, Trash } from "@phosphor-icons/react";
-import { deleteExpense, restoreRows, updateExpense } from "@/lib/localDb";
+import { deleteExpense, restoreRows, setPurchaseDueDay, updateExpense } from "@/lib/localDb";
 import { formatDatePT, isValidISODate, todayISO } from "@/lib/dates";
+import { isValidDueDay, toDueDay } from "@/lib/dueAlerts";
 import { FILTERS, groupExpenses } from "@/lib/expenses";
 import { formatBRLFromCents } from "@/lib/money";
+import { alertsSupported } from "@/lib/nativeAlerts";
 import { toSentenceCase } from "@/lib/text";
 import MoneyInput from "./MoneyInput";
 import { getCategory, getPaymentLabel } from "./categories";
@@ -27,10 +29,13 @@ function EditRow({ expense, busy, onSave, onCancel }) {
   const [amount, setAmount] = useState(expense.amount_cents);
   const [isPaid, setIsPaid] = useState(Boolean(expense.is_paid));
   const [paidDate, setPaidDate] = useState(expense.paid_date || todayISO());
+  const [dueDay, setDueDay] = useState(expense.due_day ? String(expense.due_day) : "");
+  const [canAlert] = useState(alertsSupported);
   const [error, setError] = useState("");
   const idBase = `editar-${expense.id}`;
   // Fixo e um registro so que vale para todos os meses: marcar pago aqui marcaria todos
   const canTogglePaid = expense.payment_method !== "fixed";
+  const asksDueDay = canAlert && (!canTogglePaid || !isPaid);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -38,9 +43,11 @@ function EditRow({ expense, busy, onSave, onCancel }) {
     if (!description.trim()) return setError("Informe a descrição.");
     if (cents <= 0) return setError("Informe um valor maior que zero.");
     if (canTogglePaid && isPaid && !isValidISODate(paidDate)) return setError("Informe a data do pagamento.");
+    if (asksDueDay && !isValidDueDay(dueDay)) return setError("Use um dia de vencimento entre 1 e 31.");
     const patch = { description: toSentenceCase(description), amount_cents: cents };
     if (canTogglePaid) Object.assign(patch, { is_paid: isPaid, paid_date: isPaid ? paidDate : null });
-    onSave(expense.id, patch);
+    if (asksDueDay) patch.due_day = toDueDay(dueDay);
+    onSave(expense, patch);
   }
 
   return (
@@ -91,6 +98,25 @@ function EditRow({ expense, busy, onSave, onCancel }) {
               />
             </div>
           )}
+        </div>
+      )}
+      {asksDueDay && (
+        <div className="flex items-center gap-2">
+          <label htmlFor={`${idBase}-vencimento`} className="shrink-0 text-[13px] text-body">
+            Vence no dia
+          </label>
+          <div className="w-24">
+            <input
+              id={`${idBase}-vencimento`}
+              inputMode="numeric"
+              maxLength={2}
+              autoComplete="off"
+              placeholder={expense.payment_method === "credit" ? "Cartão" : "Sem dia"}
+              value={dueDay}
+              onChange={(e) => setDueDay(e.target.value)}
+              className={`${INPUT_CLASS} num`}
+            />
+          </div>
         </div>
       )}
       {error && <p className="text-xs font-medium text-negative">{error}</p>}
@@ -147,10 +173,13 @@ export default function ExpenseList({ expenses, filter, onFilterChange, onChange
     }
   }
 
-  async function handleSave(id, patch) {
+  async function handleSave(expense, patch) {
     setBusy(true);
     try {
-      await updateExpense(id, patch);
+      await updateExpense(expense.id, patch);
+      if (patch.due_day !== undefined && patch.due_day !== (expense.due_day ?? null)) {
+        await setPurchaseDueDay(expense, patch.due_day);
+      }
       setEditingId(null);
       await onChanged();
       toast({ message: "Gasto atualizado." });

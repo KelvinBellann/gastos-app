@@ -11,6 +11,7 @@ App iOS que empacota o site estático do Next (`out/`) e abre num `WKWebView`. N
 - Exportar backup abre a folha de compartilhar do iOS (salvar em Arquivos, AirDrop...). Importar usa o seletor de arquivos normal.
 - `confirm()`/`alert()` do site viram alertas nativos.
 - A câmera e as fotos (leitura de cupom) pedem permissão na primeira vez.
+- `DueAlerts.swift`: agenda os avisos de vencimento como notificações locais, com a lista calculada em `src/lib/dueAlerts.js`. Não usa push remoto, que exigiria servidor e Apple Developer Program pago.
 
 O OCR (tesseract.js) baixa o motor e os idiomas da internet na primeira leitura de cupom. O resto do app funciona offline.
 
@@ -68,5 +69,6 @@ Para atualizar o app depois de mudar o código, repita os passos 3 e 4. Os dados
 | `AFCClient.Error.muxError` | Use a alternativa pelo iTunes do Windows descrita [nesta issue](https://github.com/xtool-org/xtool/issues/19#issuecomment-2898986718). |
 | "Desenvolvedor não confiável" | Ajustes > Geral > VPN e Gerenciamento de Dispositivos > Confiar. |
 | App para de abrir após 7 dias | Com Apple ID gratuito a assinatura vale 7 dias. Rode `xtool dev` de novo; os dados ficam. |
+| Aviso de vencimento não chega | Abra o sino e use "Enviar aviso de teste". Se aparecer o bloqueio, libere em Ajustes, nas Notificações do app. Com Apple ID gratuito, reinstale antes dos 7 dias para o app continuar válido. |
 | Tela branca / "Pasta Web ausente" | Faltou `npm run build:ios` antes do `xtool dev`. |
 | Dados sumiram | Só se o app foi apagado do iPhone. Exporte backups de vez em quando. |

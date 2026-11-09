@@ -7,6 +7,8 @@
 // As funcoes sao assincronas de proposito: os componentes carregam dados dentro de
 // useEffect, e a troca futura por IndexedDB nao muda a assinatura.
 
+import { samePurchase } from "@/lib/expenses";
+
 const STORAGE_KEY = "gastos-app:db:v1";
 const BACKUP_FORMAT = "gastos-app-backup";
 const BACKUP_VERSION = 1;
@@ -20,7 +22,11 @@ export const TABLES = [
   "plan_settings",
   "plan_months",
   "plan_contributions",
+  "alert_settings",
 ];
+
+// Avisa quem depende dos dados (os avisos de vencimento) sem cada tela precisar lembrar disso
+export const DB_CHANGED_EVENT = "gastos-db-changed";
 
 const INCOME_FIELDS = ["salary_net_cents", "multibenefits_cents", "food_cents", "spouse_salary_cents"];
 
@@ -60,6 +66,7 @@ function writeDb(db) {
     }
     throw err;
   }
+  window.dispatchEvent(new Event(DB_CHANGED_EVENT));
 }
 
 // crypto.randomUUID so existe em contexto seguro (https ou localhost). Abrindo o app
@@ -141,6 +148,14 @@ export async function updateExpense(id, patch) {
   db.expenses[idx] = { ...db.expenses[idx], ...patch, updated_at: nowISO() };
   writeDb(db);
   return db.expenses[idx];
+}
+
+// Corrigir o vencimento de uma parcela vale para as outras parcelas da mesma compra
+export async function setPurchaseDueDay(expense, dueDay) {
+  const db = readDb();
+  const ts = nowISO();
+  db.expenses = db.expenses.map((e) => (samePurchase(e, expense) ? { ...e, due_day: dueDay, updated_at: ts } : e));
+  writeDb(db);
 }
 
 // Devolve as linhas apagadas para o "Desfazer" conseguir restaurar
@@ -228,21 +243,37 @@ export async function listAllExpenses() {
 
 const SETTINGS_ID = "settings";
 
+function readSettings(table) {
+  return readDb()[table].find((r) => r.id === SETTINGS_ID) || null;
+}
+
+function saveSettings(table, patch) {
+  const db = readDb();
+  const idx = db[table].findIndex((r) => r.id === SETTINGS_ID);
+  const ts = nowISO();
+  if (idx === -1) {
+    db[table].push({ id: SETTINGS_ID, created_at: ts, updated_at: ts, ...patch });
+  } else {
+    db[table][idx] = { ...db[table][idx], ...patch, updated_at: ts };
+  }
+  writeDb(db);
+  return db[table].find((r) => r.id === SETTINGS_ID);
+}
+
 export async function getPlanSettings() {
-  return readDb().plan_settings.find((r) => r.id === SETTINGS_ID) || null;
+  return readSettings("plan_settings");
 }
 
 export async function savePlanSettings(patch) {
-  const db = readDb();
-  const idx = db.plan_settings.findIndex((r) => r.id === SETTINGS_ID);
-  const ts = nowISO();
-  if (idx === -1) {
-    db.plan_settings.push({ id: SETTINGS_ID, created_at: ts, updated_at: ts, ...patch });
-  } else {
-    db.plan_settings[idx] = { ...db.plan_settings[idx], ...patch, updated_at: ts };
-  }
-  writeDb(db);
-  return db.plan_settings.find((r) => r.id === SETTINGS_ID);
+  return saveSettings("plan_settings", patch);
+}
+
+export async function getAlertSettings() {
+  return readSettings("alert_settings");
+}
+
+export async function saveAlertSettings(patch) {
+  return saveSettings("alert_settings", patch);
 }
 
 export async function listPlanMonths() {

@@ -6,6 +6,8 @@ import { insertExpenses } from "@/lib/localDb";
 import { todayISO, isValidISODate } from "@/lib/dates";
 import { addMonths, buildExpenseEntries, monthLabel, splitInstallments } from "@/lib/expenses";
 import { formatBRLFromCents } from "@/lib/money";
+import { isValidDueDay, toDueDay } from "@/lib/dueAlerts";
+import { alertsSupported } from "@/lib/nativeAlerts";
 import { toSentenceCase } from "@/lib/text";
 import MoneyInput from "./MoneyInput";
 import { CATEGORIES, PAYMENT_METHODS } from "./categories";
@@ -22,6 +24,8 @@ export default function ExpenseForm({ monthKey, onSaved, onError, onImportStatem
   const [installments, setInstallments] = useState(1);
   const [isPaid, setIsPaid] = useState(false);
   const [paidDate, setPaidDate] = useState(todayISO);
+  const [dueDay, setDueDay] = useState("");
+  const [canAlert] = useState(alertsSupported);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const descriptionRef = useRef(null);
@@ -30,12 +34,14 @@ export default function ExpenseForm({ monthKey, onSaved, onError, onImportStatem
   const cents = Number(amount) || 0;
   const isFixed = category === "fixos";
   const isCredit = !isFixed && paymentMethod === "credit";
+  const asksDueDay = canAlert && (isFixed || isCredit || !isPaid);
 
   function validate() {
     const next = {};
     if (!description.trim()) next.description = "Informe o que foi gasto, por exemplo: almoço.";
     if (!Number.isInteger(cents) || cents <= 0) next.amount = "Informe um valor maior que zero.";
     if (!isFixed && !isCredit && isPaid && !isValidISODate(paidDate)) next.paidDate = "Informe a data do pagamento.";
+    if (asksDueDay && !isValidDueDay(dueDay)) next.dueDay = "Use um dia entre 1 e 31.";
     setErrors(next);
     if (next.description) descriptionRef.current?.focus();
     else if (next.amount) amountRef.current?.focus();
@@ -58,6 +64,7 @@ export default function ExpenseForm({ monthKey, onSaved, onError, onImportStatem
         isPaid,
         paidDate,
         date: todayISO(),
+        dueDay: asksDueDay ? toDueDay(dueDay) : null,
       });
       await insertExpenses(entries);
       setDescription("");
@@ -66,6 +73,7 @@ export default function ExpenseForm({ monthKey, onSaved, onError, onImportStatem
       setInstallments(1);
       setIsPaid(false);
       setPaidDate(todayISO());
+      setDueDay("");
       setErrors({});
       toast({
         message:
@@ -213,6 +221,29 @@ export default function ExpenseForm({ monthKey, onSaved, onError, onImportStatem
               </div>
             )}
           </div>
+        )}
+
+        {asksDueDay && (
+          <Field
+            label="Dia do vencimento"
+            htmlFor="gasto-vencimento"
+            hint={isCredit ? "Vazio usa o dia do cartão, definido no sino de avisos." : "Opcional. Com o dia, o app avisa antes de vencer."}
+            error={errors.dueDay}
+          >
+            <input
+              id="gasto-vencimento"
+              name="vencimento"
+              inputMode="numeric"
+              maxLength={2}
+              autoComplete="off"
+              placeholder="Ex.: 10"
+              value={dueDay}
+              onChange={(e) => setDueDay(e.target.value)}
+              aria-invalid={Boolean(errors.dueDay)}
+              aria-describedby={errors.dueDay ? "gasto-vencimento-error" : "gasto-vencimento-hint"}
+              className={`${INPUT_CLASS} num`}
+            />
+          </Field>
         )}
 
         <Button type="submit" className="w-full" disabled={saving}>

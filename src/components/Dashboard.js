@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Bell,
   CaretLeft,
   CaretRight,
   ChartBar,
@@ -12,6 +13,7 @@ import {
   Wallet,
 } from "@phosphor-icons/react";
 import {
+  DB_CHANGED_EVENT,
   countRows,
   deleteExpenses,
   exportBackup,
@@ -23,7 +25,9 @@ import {
 import { todayISO } from "@/lib/dates";
 import { addMonths, filterExpenses, isValidMonthKey, monthLabel, toMonthKey, FILTERS } from "@/lib/expenses";
 import { formatBRLFromCents, sumCents } from "@/lib/money";
+import { alertsSupported, syncDueAlerts } from "@/lib/nativeAlerts";
 import { Banner, IconButton, useToast } from "./ui";
+import DueAlertsDialog from "./DueAlertsDialog";
 import ExpenseForm from "./ExpenseForm";
 import ExpenseList from "./ExpenseList";
 import CategoryBreakdown from "./CategoryBreakdown";
@@ -75,6 +79,8 @@ export default function Dashboard() {
   const [err, setErr] = useState("");
   const [noticeDismissed, setNoticeDismissed] = useState(readNoticeDismissed);
   const [showStatementImport, setShowStatementImport] = useState(false);
+  const [showAlerts, setShowAlerts] = useState(false);
+  const [canAlert] = useState(alertsSupported);
   const importInputRef = useRef(null);
   const tabRefs = useRef({});
 
@@ -84,6 +90,26 @@ export default function Dashboard() {
     url.searchParams.set("aba", activeTab);
     window.history.replaceState(null, "", url);
   }, [monthKey, activeTab]);
+
+  // Refaz os avisos ao abrir o app, ao voltar para ele e a cada mudanca nos dados.
+  // Falha aqui so acontece com o banco ilegivel, e o carregamento do mes ja mostra esse erro.
+  useEffect(() => {
+    if (!canAlert) return undefined;
+    let timer;
+    const sync = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => syncDueAlerts().catch(() => {}), 300);
+    };
+    const syncWhenVisible = () => document.visibilityState === "visible" && sync();
+    sync();
+    window.addEventListener(DB_CHANGED_EVENT, sync);
+    document.addEventListener("visibilitychange", syncWhenVisible);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener(DB_CHANGED_EVENT, sync);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+    };
+  }, [canAlert]);
 
   async function loadExpenses() {
     try {
@@ -257,6 +283,11 @@ export default function Dashboard() {
           </div>
 
           <div className="ml-auto flex items-center gap-1">
+            {canAlert && (
+              <IconButton label="Avisos de vencimento" onClick={() => setShowAlerts(true)}>
+                <Bell size={18} aria-hidden="true" />
+              </IconButton>
+            )}
             <IconButton label="Exportar backup" onClick={handleExport}>
               <DownloadSimple size={18} aria-hidden="true" />
             </IconButton>
@@ -405,6 +436,8 @@ export default function Dashboard() {
       {showStatementImport && (
         <StatementImport onImported={handleStatementImported} onClose={() => setShowStatementImport(false)} />
       )}
+
+      {showAlerts && <DueAlertsDialog onClose={() => setShowAlerts(false)} />}
     </div>
   );
 }

@@ -84,8 +84,8 @@ export function groupExpenses(expenses, today = new Date()) {
 
 // Monta os registros de um novo gasto. Credito vira uma linha por parcela, com a
 // primeira parcela vencendo no mes seguinte ao da compra (regra original do app).
-export function buildExpenseEntries({ monthKey, category, description, amountCents, paymentMethod, installments, isPaid, paidDate, date }) {
-  const base = { month_key: monthKey, category, date };
+export function buildExpenseEntries({ monthKey, category, description, amountCents, paymentMethod, installments, isPaid, paidDate, date, dueDay = null }) {
+  const base = { month_key: monthKey, category, date, due_day: dueDay };
   const desc = toSentenceCase(description);
 
   if (category === "fixos") {
@@ -128,6 +128,23 @@ export function buildExpenseEntries({ monthKey, category, description, amountCen
     is_paid: Boolean(isPaid),
     paid_date: isPaid ? paidDate : null,
   }];
+}
+
+function purchaseName(description) {
+  return description.replace(/\s*\(\d+\/\d+\)$/, "");
+}
+
+// Parcelas de uma compra nao guardam um id em comum: o que as liga e a descricao sem o
+// "(i/N)", a data da compra e a quantidade de parcelas.
+export function samePurchase(a, b) {
+  return (
+    a.payment_method === "credit" &&
+    b.payment_method === "credit" &&
+    a.installments > 1 &&
+    a.installments === b.installments &&
+    a.date === b.date &&
+    purchaseName(a.description) === purchaseName(b.description)
+  );
 }
 
 export function totalsByCategory(expenses) {
