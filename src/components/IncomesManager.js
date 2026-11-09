@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 import { Plus, Trash, X } from "@phosphor-icons/react";
 import { deleteVariableIncome, insertVariableIncome, listVariableIncomes, restoreRows } from "@/lib/localDb";
 import { todayISO, formatDatePT, isValidISODate } from "@/lib/dates";
+import {
+  FOOD_DAILY_CENTS,
+  FOOD_DISCOUNT_PCT,
+  businessDaysInMonth,
+  foodAllowanceCents,
+  isValidFoodDays,
+} from "@/lib/foodAllowance";
 import { formatBRLFromCents, sumCents } from "@/lib/money";
 import { toSentenceCase } from "@/lib/text";
 import MoneyInput from "./MoneyInput";
@@ -18,6 +25,60 @@ const FIXED_FIELDS = [
 
 function emptyVariable() {
   return { description: "", amount: "", date_from: todayISO(), date_to: todayISO() };
+}
+
+function FoodAllowanceField({ monthKey, income, onUpdate }) {
+  // null mostra o valor salvo; enquanto digita, o texto fica aqui para o campo poder ficar vazio
+  const [text, setText] = useState(null);
+  const [error, setError] = useState("");
+  const savedDays = income?.food_days;
+  const id = "receita-alimentacao-dias";
+
+  function handleChange(value) {
+    setText(value);
+    if (value === "") {
+      setError("");
+    } else if (!isValidFoodDays(value)) {
+      setError("Use um número de 0 a 31.");
+    } else {
+      setError("");
+      const days = Number(value);
+      onUpdate({ ...income, food_days: days, food_cents: foodAllowanceCents(days) });
+    }
+  }
+
+  const hint =
+    income && savedDays == null
+      ? "Valor digitado antes do cálculo. Informe os dias para recalcular."
+      : `${formatBRLFromCents(FOOD_DAILY_CENTS)} × ${savedDays ?? 0} dias − ${FOOD_DISCOUNT_PCT}% em folha. O calendário do mês tem ${businessDaysInMonth(monthKey)} dias úteis.`;
+
+  return (
+    <Field label="Alimentação (dias úteis)" htmlFor={id} hint={hint} error={error}>
+      <div className="flex items-center gap-3">
+        <div className="w-24 shrink-0">
+          <input
+            id={id}
+            inputMode="numeric"
+            maxLength={2}
+            autoComplete="off"
+            disabled={!income}
+            value={text ?? savedDays ?? ""}
+            onChange={(e) => handleChange(e.target.value)}
+            onBlur={() => {
+              setText(null);
+              setError("");
+            }}
+            aria-invalid={Boolean(error)}
+            aria-describedby={`${id}-${error ? "error" : "hint"}`}
+            className={`${INPUT_CLASS} num`}
+          />
+        </div>
+        <output htmlFor={id} className="num min-w-0 flex-1 text-right text-base font-semibold text-ink">
+          {formatBRLFromCents(income?.food_cents)}
+        </output>
+      </div>
+    </Field>
+  );
 }
 
 export default function IncomesManager({ monthKey, income, onUpdate, onVariableTotalChange, onError }) {
@@ -107,17 +168,21 @@ export default function IncomesManager({ monthKey, income, onUpdate, onVariableT
       />
 
       <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
-        {FIXED_FIELDS.map(({ field, label }) => (
-          <MoneyInput
-            key={field}
-            id={`receita-${field}`}
-            name={field}
-            label={label}
-            value={income?.[field] || 0}
-            disabled={!income}
-            onChange={(cents) => income && onUpdate({ ...income, [field]: Number(cents) || 0 })}
-          />
-        ))}
+        {FIXED_FIELDS.map(({ field, label }) =>
+          field === "food_cents" ? (
+            <FoodAllowanceField key={`${field}-${monthKey}`} monthKey={monthKey} income={income} onUpdate={onUpdate} />
+          ) : (
+            <MoneyInput
+              key={field}
+              id={`receita-${field}`}
+              name={field}
+              label={label}
+              value={income?.[field] || 0}
+              disabled={!income}
+              onChange={(cents) => income && onUpdate({ ...income, [field]: Number(cents) || 0 })}
+            />
+          )
+        )}
       </div>
 
       <div className="mt-5 border-t border-line pt-4">

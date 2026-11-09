@@ -6,10 +6,9 @@ import {
   CaretLeft,
   CaretRight,
   ChartBar,
-  DownloadSimple,
+  FloppyDisk,
   Receipt,
   Target,
-  UploadSimple,
   Wallet,
 } from "@phosphor-icons/react";
 import {
@@ -26,7 +25,8 @@ import { todayISO } from "@/lib/dates";
 import { addMonths, filterExpenses, isValidMonthKey, monthLabel, toMonthKey, FILTERS } from "@/lib/expenses";
 import { formatBRLFromCents, sumCents } from "@/lib/money";
 import { alertsSupported, syncDueAlerts } from "@/lib/nativeAlerts";
-import { Banner, IconButton, useToast } from "./ui";
+import { Banner, Button, IconButton, useToast } from "./ui";
+import BackupDialog from "./BackupDialog";
 import DueAlertsDialog from "./DueAlertsDialog";
 import ExpenseForm from "./ExpenseForm";
 import ExpenseList from "./ExpenseList";
@@ -80,6 +80,7 @@ export default function Dashboard() {
   const [noticeDismissed, setNoticeDismissed] = useState(readNoticeDismissed);
   const [showStatementImport, setShowStatementImport] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
+  const [showBackup, setShowBackup] = useState(false);
   const [canAlert] = useState(alertsSupported);
   const importInputRef = useRef(null);
   const tabRefs = useRef({});
@@ -152,6 +153,7 @@ export default function Dashboard() {
       const next = Number(updated[key]) || 0;
       if (next !== income[key]) patch[key] = next;
     }
+    if (updated.food_days !== income.food_days) patch.food_days = updated.food_days;
     if (Object.keys(patch).length === 0) return;
     const previous = income;
     setIncome({ ...income, ...patch });
@@ -172,6 +174,8 @@ export default function Dashboard() {
       const nativeShare = window.webkit?.messageHandlers?.shareFile;
       if (nativeShare) {
         nativeShare.postMessage({ filename, content: json });
+        // Aqui o arquivo ainda nao foi salvo: quem decide e a pessoa, na folha de compartilhar
+        toast({ message: `Backup com ${countRows(backup.data)} registros pronto. Escolha onde salvar.` });
       } else {
         const blob = new Blob([json], { type: "application/json" });
         const url = URL.createObjectURL(blob);
@@ -180,8 +184,8 @@ export default function Dashboard() {
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
+        toast({ message: `Backup exportado com ${countRows(backup.data)} registros.` });
       }
-      toast({ message: `Backup exportado com ${countRows(backup.data)} registros.` });
     } catch (e) {
       setErr(`Não foi possível exportar: ${e.message}`);
     }
@@ -194,7 +198,7 @@ export default function Dashboard() {
       const incoming = countRows(payload?.data);
       const current = countRows((await exportBackup()).data);
       const ok = window.confirm(
-        `Importar este backup substitui os ${current} registros atuais deste navegador pelos ${incoming} do arquivo. Continuar?`
+        `Importar este backup substitui os ${current} registros atuais deste aparelho pelos ${incoming} do arquivo. Continuar?`
       );
       if (!ok) return;
       const total = await importBackup(payload);
@@ -288,12 +292,10 @@ export default function Dashboard() {
                 <Bell size={18} aria-hidden="true" />
               </IconButton>
             )}
-            <IconButton label="Exportar backup" onClick={handleExport}>
-              <DownloadSimple size={18} aria-hidden="true" />
-            </IconButton>
-            <IconButton label="Importar backup" onClick={() => importInputRef.current?.click()}>
-              <UploadSimple size={18} aria-hidden="true" />
-            </IconButton>
+            <Button variant="secondary" size="sm" onClick={() => setShowBackup(true)}>
+              <FloppyDisk size={16} aria-hidden="true" />
+              Backup
+            </Button>
             <input
               ref={importInputRef}
               type="file"
@@ -343,8 +345,8 @@ export default function Dashboard() {
           {err && <Banner onDismiss={() => setErr("")}>{err}</Banner>}
           {!noticeDismissed && (
             <Banner tone="info" onDismiss={dismissNotice}>
-              Os dados ficam só neste navegador. Use o botão de exportar backup no topo para não perder nada ao trocar de
-              aparelho ou limpar o navegador.
+              Os dados ficam só neste aparelho. Toque em Backup, no topo, para guardar uma cópia antes de atualizar o app ou
+              trocar de aparelho.
             </Banner>
           )}
         </div>
@@ -438,6 +440,20 @@ export default function Dashboard() {
       )}
 
       {showAlerts && <DueAlertsDialog onClose={() => setShowAlerts(false)} />}
+
+      {showBackup && (
+        <BackupDialog
+          onClose={() => setShowBackup(false)}
+          onExport={() => {
+            setShowBackup(false);
+            handleExport();
+          }}
+          onImport={() => {
+            setShowBackup(false);
+            importInputRef.current?.click();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -15,7 +15,7 @@ Configuração em `jest.config.js` (`next/jest`, ambiente jsdom, alias `@/` para
 
 | Suite | Cobre |
 |---|---|
-| `src/lib/localDb.test.js` | filtro de gastos por mês, CRUD, desfazer, cascata de recibos, exportar e importar backup, JSON corrompido |
+| `src/lib/localDb.test.js` | filtro de gastos por mês, CRUD, desfazer, cascata de recibos, exportar e importar backup, JSON corrompido, alimentação calculada por mês |
 | `src/lib/plan.test.js` | divisão essencial primeiro, mês fraco, renda que não cobre, bônus para o futuro, reserva antes de investir, previsões, gasto real com benefícios |
 | `src/lib/text.test.js` | padrão de escrita das descrições: primeira letra maiúscula, resto minúsculo, espaços sobrando |
 | `src/lib/expenses.test.js` | divisão de parcelas, virada de ano, registros por forma de pagamento, período, filtro e agrupamento |
@@ -24,11 +24,12 @@ Configuração em `jest.config.js` (`next/jest`, ambiente jsdom, alias `@/` para
 | `src/lib/statementParser.test.js` | valores, OFX 1.x e 2.x, CSV dos principais bancos, Latin-1, texto de OCR em tabela e em lista de app, prints sobrepostos |
 | `src/lib/statementClassifier.test.js` | categorias do extrato, duplicados, gastos fixos, fatura e investimento, gravação no mês certo |
 | `src/lib/dueAlerts.test.js` | horários dos avisos, dia do cartão e dia próprio, meses curtos, contas pagas, agrupamento, fixos, limite do iOS |
+| `src/lib/foodAllowance.test.js` | dias úteis com feriados fixos e Sexta-feira Santa, valor da alimentação com desconto |
 | `src/lib/nativeAlerts.test.js` | mensagens para o lado nativo, lista vazia ao desligar, uma sincronização por vez |
 | `src/components/MoneyInput.test.js` | formatação de centavos (cópia da lógica) |
 | `src/components/IncomesManager.test.js` | soma das receitas fixas (cópia da lógica) |
 
-Resultado em 2026-11-08: 12 suítes, 177 testes, 177 passaram, 0 falharam, 0 em skip.
+Resultado em 2026-11-09: 13 suítes, 191 testes, 191 passaram, 0 falharam, 0 em skip.
 
 Limitações: os testes de `MoneyInput` e `IncomesManager` reimplementam a lógica e não importam o componente. O código Swift (`ios/`) não tem testes: os avisos só podem ser confirmados no iPhone, com o botão "Enviar aviso de teste".
 

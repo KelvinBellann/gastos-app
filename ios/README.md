@@ -8,7 +8,8 @@ App iOS que empacota o site estático do Next (`out/`) e abre num `WKWebView`. N
 - `Resources/AppIcon.png`: ícone do app (1024x1024, sem transparência), gerado a partir de `Resources/AppIcon.svg`.
 - `Sources/GastosApp/Web/`: cópia de `out/`, gerada por `npm run build:ios`. Não vai para o git.
 - `WebAppView.swift`: serve os arquivos pelo esquema `gastos://localhost`. O Next usa caminhos absolutos (`/_next/...`), que quebram em `file://`, e a origem fixa mantém o `localStorage` entre aberturas.
-- Exportar backup abre a folha de compartilhar do iOS (salvar em Arquivos, AirDrop...). Importar usa o seletor de arquivos normal.
+- Exportar no botão Backup abre a folha de compartilhar do iOS (salvar em Arquivos, AirDrop...). Importar usa o seletor de arquivos normal.
+- A tela só rola na vertical: o zoom fica desligado dentro do app (o site no navegador continua ampliável) e o deslocamento horizontal é travado no `WebAppView.swift`.
 - `confirm()`/`alert()` do site viram alertas nativos.
 - A câmera e as fotos (leitura de cupom) pedem permissão na primeira vez.
 - `DueAlerts.swift`: agenda os avisos de vencimento como notificações locais, com a lista calculada em `src/lib/dueAlerts.js`. Não usa push remoto, que exigiria servidor e Apple Developer Program pago.

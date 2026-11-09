@@ -105,6 +105,29 @@ body {
   }
 }
 
+/*
+  No iPhone, campo com fonte menor que 16px faz o iOS dar zoom ao tocar, e a tela fica
+  solta para os lados. Campo de data tem largura minima propria e nao encolhe sozinho.
+*/
+@media (pointer: coarse) {
+  html,
+  body {
+    overflow-x: clip;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  input[type="date"],
+  input[type="month"] {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
 /* Foco so por teclado, com contraste nos dois temas */
 :focus-visible {
   outline: 2px solid var(--focus);

@@ -7,7 +7,8 @@
 // As funcoes sao assincronas de proposito: os componentes carregam dados dentro de
 // useEffect, e a troca futura por IndexedDB nao muda a assinatura.
 
-import { samePurchase } from "@/lib/expenses";
+import { samePurchase, toMonthKey } from "@/lib/expenses";
+import { businessDaysInMonth, foodAllowanceCents } from "@/lib/foodAllowance";
 
 const STORAGE_KEY = "gastos-app:db:v1";
 const BACKUP_FORMAT = "gastos-app-backup";
@@ -100,15 +101,25 @@ function byKey(key, direction = "asc") {
 
 // ---------- Receitas fixas ----------
 
+// Alimentacao vem dos dias uteis do mes. Mes que ja passou com valor digitado antes dessa
+// regra fica como esta: era o valor recebido de verdade.
+function needsFoodAllowance(row) {
+  return row.food_days == null && (!row.food_cents || row.month_key >= toMonthKey());
+}
+
 export async function getOrCreateIncome(monthKey) {
   const db = readDb();
-  const found = db.incomes.find((i) => i.month_key === monthKey);
-  if (found) return found;
-  const row = withMeta({
-    month_key: monthKey,
-    ...Object.fromEntries(INCOME_FIELDS.map((f) => [f, 0])),
-  });
-  db.incomes.push(row);
+  let row = db.incomes.find((i) => i.month_key === monthKey);
+  if (row && !needsFoodAllowance(row)) return row;
+  if (!row) {
+    row = withMeta({
+      month_key: monthKey,
+      ...Object.fromEntries(INCOME_FIELDS.map((f) => [f, 0])),
+    });
+    db.incomes.push(row);
+  }
+  const days = businessDaysInMonth(monthKey);
+  Object.assign(row, { food_days: days, food_cents: foodAllowanceCents(days), updated_at: nowISO() });
   writeDb(db);
   return row;
 }

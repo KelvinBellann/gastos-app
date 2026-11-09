@@ -204,3 +204,49 @@ describe("avisos de vencimento", () => {
     expect(rows.map((r) => r.due_day)).toEqual([15, 15, 15, undefined]);
   });
 });
+
+describe("alimentacao pelos dias uteis", () => {
+  const MES_FUTURO = "2099-11";
+
+  function comRenda(row) {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ incomes: [{ id: "i1", salary_net_cents: 100, multibenefits_cents: 0, spouse_salary_cents: 0, ...row }] })
+    );
+  }
+
+  it("mes novo ja vem calculado", async () => {
+    const row = await getOrCreateIncome("2026-11");
+    expect(row).toMatchObject({ food_days: 19, food_cents: 73186, salary_net_cents: 0 });
+  });
+
+  it("mes atual ou futuro com valor digitado passa a ser calculado", async () => {
+    comRenda({ month_key: MES_FUTURO, food_cents: 50000 });
+    const row = await getOrCreateIncome(MES_FUTURO);
+    expect(row.food_days).toBeGreaterThan(0);
+    expect(row.food_cents).not.toBe(50000);
+    expect(row.salary_net_cents).toBe(100);
+  });
+
+  it("mes passado com valor digitado continua como estava", async () => {
+    comRenda({ month_key: "2020-03", food_cents: 50000 });
+    const row = await getOrCreateIncome("2020-03");
+    expect(row.food_cents).toBe(50000);
+    expect(row.food_days).toBeUndefined();
+  });
+
+  it("mes passado zerado e calculado", async () => {
+    comRenda({ month_key: "2026-04", food_cents: 0 });
+    expect(await getOrCreateIncome("2026-04")).toMatchObject({ food_days: 20 });
+  });
+
+  it("dias ajustados a mao nao sao recalculados", async () => {
+    comRenda({ month_key: MES_FUTURO, food_days: 5, food_cents: 19259 });
+    expect(await getOrCreateIncome(MES_FUTURO)).toMatchObject({ food_days: 5, food_cents: 19259 });
+  });
+
+  it("zero dias, como em ferias, continua zero", async () => {
+    comRenda({ month_key: MES_FUTURO, food_days: 0, food_cents: 0 });
+    expect(await getOrCreateIncome(MES_FUTURO)).toMatchObject({ food_days: 0, food_cents: 0 });
+  });
+});

@@ -8,9 +8,9 @@ Stack: Next.js 16 (App Router, React Compiler), React 19, Tailwind 4, Phosphor I
 
 - Tudo fica no `localStorage` do navegador, na chave `gastos-app:db:v1`, com as tabelas `incomes`, `expenses`, `variable_incomes`, `receipts`, `receipt_items`, `plan_settings`, `plan_months`, `plan_contributions` e `alert_settings`.
 - Cada navegador e cada aparelho tem a sua cópia. Abrir o app no celular não mostra o que foi lançado no computador.
-- Limpar os dados do site no navegador apaga tudo. Por isso o topo do app tem dois botões:
-  - **Exportar backup**: baixa `gastos-backup-AAAA-MM-DD.json` com todas as tabelas.
-  - **Importar backup**: substitui os dados deste navegador pelos do arquivo, depois de confirmar. Arquivo de outro formato é recusado sem apagar nada.
+- Limpar os dados do site no navegador ou apagar o app do iPhone apaga tudo. Por isso o botão **Backup**, no topo, oferece:
+  - **Exportar meus dados**: gera `gastos-backup-AAAA-MM-DD.json` com todas as tabelas. No iPhone abre a folha de compartilhar, com Salvar em Arquivos.
+  - **Importar um backup**: substitui os dados atuais pelos do arquivo, depois de confirmar. Arquivo de outro formato é recusado sem apagar nada.
 - A leitura da nota (OCR) roda no próprio navegador. A imagem não é gravada, só o texto lido e os itens.
 
 ## Rodar
@@ -43,6 +43,7 @@ Não há variável de ambiente. O `.env.local` antigo (Supabase) não é mais us
 | Lançamentos iguais no mesmo dia | Somados numa linha "2x"; editar e excluir valem para cada registro do grupo |
 | Excluir | Imediato, com "Desfazer" por 6 segundos |
 | Receitas | 4 fixas por mês (salário, multibenefícios, alimentação, salário esposa) e variáveis com período; ambas entram no saldo |
+| Alimentação | R$ 39,71 × dias úteis − 3% em folha (`src/lib/foodAllowance.js`). Tira fins de semana e feriados nacionais; os dias podem ser ajustados no mês. Mês passado com valor digitado antes da regra não muda |
 | Filtro de período | Hoje, 7 dias, 30 dias ou Todos; o resumo de gastos acompanha o filtro |
 | Mês e aba | Ficam na URL (`?mes=2026-10&aba=recibos`) |
 
@@ -121,6 +122,7 @@ Previsões usam a média do futuro dos últimos 3 meses fechados. A reserva é t
 - `src/lib/receiptOCR.js`, `receiptParser.js`: leitura e interpretação da nota
 - `src/components/StatementImport.js`: importação e conferência do extrato
 - `src/lib/statementParser.js`, `statementPdf.js`, `statementClassifier.js`: leitura de OFX, CSV, PDF e texto de OCR, e categorização dos lançamentos
+- `src/components/BackupDialog.js`: exportar e importar os dados
 - `src/components/DueAlertsDialog.js`: ajustes e prévia dos avisos de vencimento
 - `src/lib/dueAlerts.js`, `nativeAlerts.js`: cálculo dos avisos e ponte com o iOS
 - `src/app/globals.css`: tokens de cor dos temas claro e escuro

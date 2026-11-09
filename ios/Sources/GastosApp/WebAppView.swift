@@ -9,6 +9,13 @@ import WebKit
 private let appScheme = "gastos"
 private let startURL = URL(string: "\(appScheme)://localhost/")!
 
+// O site deixa ampliar no navegador por acessibilidade; dentro do app, zoom so solta a tela
+private let lockZoomScript = """
+document.querySelector('meta[name=viewport]')?.setAttribute(
+  'content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover'
+);
+"""
+
 struct WebAppView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -19,6 +26,9 @@ struct WebAppView: UIViewRepresentable {
         config.userContentController.add(context.coordinator, name: "shareFile")
         config.userContentController.add(context.coordinator, name: "dueAlerts")
         UNUserNotificationCenter.current().delegate = ForegroundAlerts.shared
+        config.userContentController.addUserScript(
+            WKUserScript(source: lockZoomScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        )
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.uiDelegate = context.coordinator
@@ -26,6 +36,8 @@ struct WebAppView: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = .appBackground
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.scrollView.showsHorizontalScrollIndicator = false
+        webView.scrollView.delegate = context.coordinator
         webView.load(URLRequest(url: startURL))
         return webView
     }
@@ -41,7 +53,12 @@ struct WebAppView: UIViewRepresentable {
 }
 
 @MainActor
-final class Coordinator: NSObject, WKUIDelegate, WKNavigationDelegate, WKScriptMessageHandler {
+final class Coordinator: NSObject, WKUIDelegate, WKNavigationDelegate, WKScriptMessageHandler, UIScrollViewDelegate {
+    // A pagina so anda na vertical; tabelas largas continuam rolando dentro do proprio quadro
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        if scrollView.contentOffset.x != 0 { scrollView.contentOffset.x = 0 }
+    }
+
     // window.alert/confirm nao fazem nada num WKWebView sem estes metodos; o app usa
     // confirm() antes de importar um backup por cima dos dados atuais.
     // Versoes async dos delegates: a assinatura com completionHandler muda de anotacoes
